@@ -757,23 +757,9 @@ struct FastCityStats : CityStatsInterface {
     }
 
     void LoadFromFile(std::istream &in) override {
-        in.read(inputData.data(), READ_BUFFER_SIZE);
-        const int64_t readSize = in.gcount();
-        inputData[readSize] = '\n';
-
-        int64_t index = 0;
-        while (true) {
-            const int64_t start = index;
-            while (index < readSize && inputData[index] != '\n') {
-                ++index;
-            }
-
-            if (index - start == 0) {
-                break;
-            }
-            ParseLine(start, index - start);
-            ++index;
-        }
+        ParseInputLines<3, 8>(in, [this](int start, int length) {
+            ParseLine(start, length);
+        });
     }
 
     __forceinline void ParseLineCommand(int64_t start, int64_t length) {
@@ -863,7 +849,7 @@ struct FastCityStats : CityStatsInterface {
     }
 
     template <int loopCount = 8, int arrSize>
-    __forceinline int FindLineEndings(char *data, std::array<int, arrSize> &indices) {
+    static __forceinline int FindLineEndings(char *data, std::array<int, arrSize> &indices) {
         int count = 0;
 #ifdef ENABLE_SIMD
         Vec64c mask('\n');
@@ -883,17 +869,17 @@ struct FastCityStats : CityStatsInterface {
         return count;
     }
 
-    virtual void ExecuteCommands(std::istream &commands) override {
-        commands.clear();
-        commands.seekg(0, std::ios::beg);
-        commands.read(inputData.data(), READ_BUFFER_SIZE);
-        const int64_t readSize = commands.gcount();
+    template <int MaxLinePer64Byte = 4, int LoopCount = 16, typename ParseFN>
+    static __forceinline void ParseInputLines(std::istream &in, ParseFN &&fn) {
+        in.read(inputData.data(), READ_BUFFER_SIZE);
+        const int64_t readSize = in.gcount();
         inputData[readSize] = '\n';
+
         int prev = 0;
         int batchCount = 0;
-        const int loopCount = 16;
+        const int loopCount = LoopCount;
 #ifdef ENABLE_SIMD
-        const int arrSize = loopCount * 4;
+        const int arrSize = loopCount * MaxLinePer64Byte;
         batchCount = readSize / (loopCount * 64);
         std::array<int, arrSize> indices{};
         for (int b = 0; b < batchCount; b++) {
@@ -903,13 +889,14 @@ struct FastCityStats : CityStatsInterface {
                 const int start = prev;
                 const int end = indices[c];
                 prev = end;
-                ParseLineCommand(start + offset, end - start);
+                fn(start + offset, end - start);
             }
             prev = -((loopCount * 64) - prev);
         }
 #endif
         int64_t index = batchCount * (loopCount * 64) + prev;
-        do {
+
+        while (true) {
             const int64_t start = index;
             while (index < readSize && inputData[index] != '\n') {
                 ++index;
@@ -918,9 +905,15 @@ struct FastCityStats : CityStatsInterface {
             if (index - start == 0) {
                 break;
             }
-            ParseLineCommand(start, index - start);
+            fn(start, index - start);
             ++index;
-        } while (true);
+        }
+    }
+
+    virtual void ExecuteCommands(std::istream &commands) override {
+        ParseInputLines(commands, [this] (int start, int length) {
+            ParseLineCommand(start, length);
+        });
 
         {
             IndexContainer index;
@@ -1121,7 +1114,7 @@ int main(int argc, char *argv[]) {
             std::vector<float> data;
             std::string output;
             std::cout << "Running test " << tests[idx].name << " " << repeat << " times\n";
-            for (int c = 0; c < repeat * 10; c++) {
+            for (int c = 0; c < repeat * 5; c++) {
                 allocator.freeAll();
                 FastCityStats update(&allocator);
                 const auto times = Tester::TestImplementation(tests[idx].name, &update, data, output, "update");
