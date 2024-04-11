@@ -802,7 +802,7 @@ struct FastCityStats : CityStatsInterface {
     using IndexContainer = std::array<int, INDEX_SIZE + 2>;
 
     __forceinline void buildIDIndex(IndexContainer &index) {
-        const int elementPerInterval = dataID.size() / INDEX_SIZE;
+        const float elementPerInterval = float(dataID.size()) / INDEX_SIZE;
         for (int c = 0; c < INDEX_SIZE; c++) {
             index[c + 1] = dataID[std::min<int>((c + 1) * elementPerInterval, dataID.size() - 1)];
         }
@@ -815,7 +815,7 @@ struct FastCityStats : CityStatsInterface {
     }
 
     __forceinline void remapIndices(CommandList &commands, IndexContainer &index) {
-        const int elementPerInterval = dataID.size() / INDEX_SIZE;
+        const float elementPerInterval = float(dataID.size()) / INDEX_SIZE;
 
         const int len = commands.size();
         const int idCount = dataID.size();
@@ -832,15 +832,15 @@ struct FastCityStats : CityStatsInterface {
             //    || endID > index.back() || endID < index.front());
 
             auto start = std::lower_bound(
-                dataID.begin() + std::max(0, (startIndexIndex - 2) * elementPerInterval),
-                dataID.begin() + std::min(idCount, (startIndexIndex + 0) * elementPerInterval),
+                dataID.begin() + std::max<int>(0, (startIndexIndex - 2) * elementPerInterval),
+                dataID.begin() + std::min<int>(idCount, (startIndexIndex + 0) * elementPerInterval),
                 startID);
-
             //auto _start = std::lower_bound(dataID.begin(), dataID.end(), startID);
             //assert(start == _start);
+
             auto end = std::upper_bound(
-                dataID.begin() + std::max(0, (endIndexIndex - 2) * elementPerInterval),
-                dataID.begin() + std::min(idCount, (endIndexIndex + 0) * elementPerInterval),
+                dataID.begin() + std::max<int>(0, (endIndexIndex - 2) * elementPerInterval),
+                dataID.begin() + std::min<int>(idCount, (endIndexIndex + 0) * elementPerInterval),
                 endID);
             //auto _end = std::upper_bound(dataID.begin(), dataID.end(), endID);
             //assert(end == _end);
