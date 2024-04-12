@@ -14,6 +14,7 @@
 #include <cstring>
 #include <cstdint>
 #include <cassert>
+
 using namespace std::chrono_literals;
 
 
@@ -462,12 +463,12 @@ std::ostream &operator<<(std::ostream &out, const Tester::TestResult::Times &tim
 
 const int repeat = 5;
 std::vector<TestDescription> tests = {
-    //{3, 1000, 10, "small", repeat},
-    //{100, 10'000, 10'000, "medium", repeat},
-    //{100, 50'000, 20'000, "large", repeat},
-    //{100, 1'000, 1'000'000, "many-updates", repeat},
+    {3, 1000, 10, "small", repeat},
+    {100, 10'000, 10'000, "medium", repeat},
+    {100, 50'000, 20'000, "large", repeat},
+    {100, 1'000, 1'000'000, "many-updates", repeat},
     {1000, 10'000'000, 100, "many-records", repeat},
-    //{100'000, 1'000'000, 100, "many-cities", repeat},
+    {100'000, 1'000'000, 100, "many-cities", repeat},
 };
 
 //////////////////////// BEGIN IMPLEMENTATION ////////////////////////
@@ -679,13 +680,48 @@ struct FastCityStats : CityStatsInterface {
         inputData.resize(0);
     }
 
-    __forceinline static int64_t ParseInt(const char *str, int maxlen, int &index) {
-        int64_t value = 0;
+    __forceinline static int ParseInt(const char *str, int maxlen, int &index) {
+        int value = 0;
+        const int start = index;
         for (int c = 0; c < maxlen && str[index] != ' ' && str[index] != '\n' && str[index] != '.'; index++, c++) {
             value = value * 10 + str[index] - '0';
         }
+
         return value;
     }
+
+    __forceinline static int ParseIntSimd(const char *str, int maxlen, int &index) {
+#ifdef ENABLE_SIMD
+        constexpr int multipliers[16] = {
+            10'000'000,
+            1'000'000,
+            100'000,
+            10'000,
+            1'000,
+            100,
+            10,
+            1,
+        };
+
+        const Vec16c maskSpace(' '), maskNewLine('\n'), maskDot('.');
+        Vec16c digits;
+        digits.load(str + index);
+
+        Vec16cb stopMask = (digits == maskSpace) | (digits == maskNewLine) | (digits == maskDot);
+        const int stopIndex = BSF(uint32_t(to_bits(stopMask)));
+        digits = digits - Vec16c('0');
+        Vec8i powers, digitNumbers = _mm256_cvtepi8_epi32(digits);
+        powers.load(multipliers + (8 - stopIndex));
+
+        auto parts = powers * digitNumbers;
+        index += stopIndex;
+        return horizontal_add_x(parts);
+
+#else
+        return ParseInt(str, maxLen, index);
+#endif
+    }
+
 
     __forceinline static Directions GetDir(const char *dirName) {
         switch (dirName[0]) {
@@ -750,20 +786,33 @@ struct FastCityStats : CityStatsInterface {
 #endif
     }
 
-    __forceinline void ParseLine(int64_t start, int64_t length) {
+    __forceinline void ParseLine(int start, int length, int &longIDs) {
         std::string_view line(inputData.data() + start, length);
 
         const char *lineData = inputData.data() + start;
 
         int index = 0;
-        int64_t id = ParseInt(lineData, ID_MAX_DIGIT, index);
+        int id;
+        if (longIDs) {
+            id = ParseIntSimd(lineData, ID_MAX_DIGIT, index);
+        } else {
+            id = ParseInt(lineData, ID_MAX_DIGIT, index);
+            longIDs = index > 4;
+        }
         index++;
+#ifdef ENABLE_SIMD
         Vec32c inputData, spaceMask(' ');
         inputData.load(lineData + index);
         const uint32_t mask = to_bits(inputData == spaceMask);
         const int spaceIndex = BSF(mask);
         index = index + spaceIndex + 1;
-        
+#else
+        for (int c = 0; c < 32 && lineData[index] != ' '; c++) {
+            index++;
+        }
+        index++;
+#endif
+
         const auto dir = GetDir(lineData + index);
         index += dirNames[dir].length();
 
@@ -778,8 +827,9 @@ struct FastCityStats : CityStatsInterface {
     }
 
     void LoadFromFile(std::istream &in) override {
-        ParseInputLines<3, 8>(in, [this](int start, int length) {
-            ParseLine(start, length);
+        int longIds = false;
+        ParseInputLines<3, 8>(in, [&](int start, int length) {
+            ParseLine(start, length, longIds);
         });
     }
 
