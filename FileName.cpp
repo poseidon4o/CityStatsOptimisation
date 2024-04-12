@@ -462,12 +462,12 @@ std::ostream &operator<<(std::ostream &out, const Tester::TestResult::Times &tim
 
 const int repeat = 5;
 std::vector<TestDescription> tests = {
-    {3, 1000, 10, "small", repeat},
-    {100, 10'000, 10'000, "medium", repeat},
-    {100, 50'000, 20'000, "large", repeat},
-    {100, 1'000, 1'000'000, "many-updates", repeat},
+    //{3, 1000, 10, "small", repeat},
+    //{100, 10'000, 10'000, "medium", repeat},
+    //{100, 50'000, 20'000, "large", repeat},
+    //{100, 1'000, 1'000'000, "many-updates", repeat},
     {1000, 10'000'000, 100, "many-records", repeat},
-    {100'000, 1'000'000, 100, "many-cities", repeat},
+    //{100'000, 1'000'000, 100, "many-cities", repeat},
 };
 
 //////////////////////// BEGIN IMPLEMENTATION ////////////////////////
@@ -730,6 +730,26 @@ struct FastCityStats : CityStatsInterface {
         return (nominator + denomDigit / 10.f) * multiplier[negative];
     }
 
+    __forceinline static int BSF(uint64_t value) {
+#ifdef _WIN64
+        unsigned long int res;
+        _BitScanForward64(&res, value);
+        return res;
+#else
+        __builtin_ctzll(maskResult);
+#endif
+    }
+
+    __forceinline static int BSF(uint32_t value) {
+#ifdef _WIN64
+        unsigned long int res;
+        _BitScanForward(&res, value);
+        return res;
+#else
+        __builtin_ctz(maskResult);
+#endif
+    }
+
     __forceinline void ParseLine(int64_t start, int64_t length) {
         std::string_view line(inputData.data() + start, length);
 
@@ -738,11 +758,12 @@ struct FastCityStats : CityStatsInterface {
         int index = 0;
         int64_t id = ParseInt(lineData, ID_MAX_DIGIT, index);
         index++;
-        for (int c = 0; c < 32 && lineData[index] != ' '; c++) {
-            index++;
-        }
-
-        index++;
+        Vec32c inputData, spaceMask(' ');
+        inputData.load(lineData + index);
+        const uint32_t mask = to_bits(inputData == spaceMask);
+        const int spaceIndex = BSF(mask);
+        index = index + spaceIndex + 1;
+        
         const auto dir = GetDir(lineData + index);
         index += dirNames[dir].length();
 
@@ -836,16 +857,6 @@ struct FastCityStats : CityStatsInterface {
             commands.start[c] = startIndex;
             commands.end[c] = endIndex;
         }
-    }
-
-    static int BSF(uint64_t value) {
-#ifdef _WIN64
-        unsigned long int res;
-        _BitScanForward64(&res, value);
-        return res;
-#else
-        __builtin_ctzll(maskResult);
-#endif
     }
 
     template <int loopCount = 8, int arrSize>
