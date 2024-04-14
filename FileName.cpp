@@ -690,6 +690,16 @@ struct FastCityStats : CityStatsInterface {
         {dirNamesBuff + 50, 5},
         {dirNamesBuff + 55, 11},
     };
+    int dirNameLengths[8] = {
+        (int)dirNames[0].length(),
+        (int)dirNames[1].length(),
+        (int)dirNames[2].length(),
+        (int)dirNames[3].length(),
+        (int)dirNames[4].length(),
+        (int)dirNames[5].length(),
+        (int)dirNames[6].length(),
+        (int)dirNames[7].length(),
+    };
     inline static constexpr int READ_BUFFER_SIZE = 450_mb;
     inline static constexpr int ID_MAX_DIGIT = 21;
 
@@ -853,15 +863,7 @@ struct FastCityStats : CityStatsInterface {
 #endif
 
         const auto dir = GetDir(lineData + index);
-        {
-            ZoneScopedN("SkipDirName");
-            Vec32c inputData, spaceMask(' ');
-            inputData.load(lineData + index);
-            const uint32_t mask = to_bits(inputData == spaceMask);
-            const int spaceIndex = BSF(mask);
-            index = index + spaceIndex + 1;
-        }
-        //index += dirNames[dir].length();
+        index += dirNameLengths[dir];
 
         const float temp = ParseFloat<' '>(lineData, 2, index);
         ++index;
