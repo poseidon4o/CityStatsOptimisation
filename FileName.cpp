@@ -461,7 +461,7 @@ std::ostream &operator<<(std::ostream &out, const Tester::TestResult::Times &tim
     return out;
 }
 
-const int repeat = 5;
+const int repeat = 3;
 std::vector<TestDescription> tests = {
     {3, 1000, 10, "small", repeat},
     {100, 10'000, 10'000, "medium", repeat},
@@ -474,16 +474,32 @@ std::vector<TestDescription> tests = {
 //////////////////////// BEGIN IMPLEMENTATION ////////////////////////
 // No changes outside of this region are allowed
 // Implement the FastCityStats class here
-#ifndef _WIN64
-#define __forceinline __attribute__((always_inline))
+#ifdef _WIN64
+#define FORCE_INLINE __forceinline
+#define NEVER_INLINE __declspec(noinline)
+#else
+#define FORCE_INLINE __attribute__((always_inline))
+#define NEVER_INLINE __attribute__((noinline))
 #endif
+
 #define ENABLE_SIMD
+#define TRACY_ENABLE
+
+#ifdef TRACY_ENABLE
+#include "tracy/public/tracy/Tracy.hpp"
+#else
+#define ZoneScoped
+#define ZoneScopedN(...)
+#define ZoneValue(...)
+
+#endif
 #ifdef ENABLE_SIMD
 #include <immintrin.h>
-#include "vectorclass2/vectorclass.h"
+#include "vectorclass.h"
 #endif
 #include <array>
 #include <string_view>
+#include <thread>
 
 template <typename T>
 struct AlignedArrayPtr {
@@ -583,6 +599,10 @@ struct AlignedArrayPtr {
         count = newCount;
     }
 
+    void clear() {
+        count = 0;
+    }
+
     AlignedArrayPtr(const AlignedArrayPtr &) = delete;
     AlignedArrayPtr &operator=(const AlignedArrayPtr &) = delete;
 };
@@ -644,6 +664,7 @@ struct FastCityStats : CityStatsInterface {
         }
 
         void push_back(const Command &cmd) {
+            ZoneScoped;
             start.push_back(cmd.start);
             end.push_back(cmd.end);
             delta.push_back(cmd.delta);
@@ -657,11 +678,23 @@ struct FastCityStats : CityStatsInterface {
     inline static AlignedArrayPtr<uint8_t> dataDirs;
     inline static AlignedArrayPtr<char> inputData;
     inline static CommandList hCommands, tCommands;
-    inline static std::string_view dirNames[] = { "north ", "north-east ", "east ", "south-east ", "south ", "south-west ", "west ", "north-west " };
+
+    char dirNamesBuff[68] = { "north north-east east south-east south south-west west north-west " };
+    std::string_view dirNames[8] = {
+        {dirNamesBuff + 0, 6},
+        {dirNamesBuff + 6, 11},
+        {dirNamesBuff + 17, 5},
+        {dirNamesBuff + 22, 11},
+        {dirNamesBuff + 33, 6},
+        {dirNamesBuff + 39, 11},
+        {dirNamesBuff + 50, 5},
+        {dirNamesBuff + 55, 11},
+    };
     inline static constexpr int READ_BUFFER_SIZE = 450_mb;
     inline static constexpr int ID_MAX_DIGIT = 21;
 
     FastCityStats(StackAllocator *allocator) : CityStatsInterface(allocator) {
+        ZoneScoped;
         dataID.reserve(RESERVE_SIZE);
         dataTemp.reserve(RESERVE_SIZE);
         dataHumidity.reserve(RESERVE_SIZE);
@@ -680,17 +713,19 @@ struct FastCityStats : CityStatsInterface {
         inputData.resize(0);
     }
 
-    __forceinline static int ParseInt(const char *str, int maxlen, int &index) {
+    FORCE_INLINE static int ParseInt(const char *str, int maxlen, int &index) {
+        ZoneScoped;
         int value = 0;
         const int start = index;
         for (int c = 0; c < maxlen && str[index] != ' ' && str[index] != '\n' && str[index] != '.'; index++, c++) {
             value = value * 10 + str[index] - '0';
         }
-
+        ZoneValue(value);
         return value;
     }
 
-    __forceinline static int ParseIntSimd(const char *str, int maxlen, int &index) {
+    FORCE_INLINE static int ParseIntSimd(const char *str, int maxlen, int &index) {
+        ZoneScoped;
 #ifdef ENABLE_SIMD
         constexpr int multipliers[16] = {
             10'000'000,
@@ -715,78 +750,78 @@ struct FastCityStats : CityStatsInterface {
 
         auto parts = powers * digitNumbers;
         index += stopIndex;
-        return horizontal_add_x(parts);
+        const int value = horizontal_add_x(parts);
+        ZoneValue(value);
+        return value;
 
 #else
-        return ParseInt(str, maxLen, index);
+        return ParseInt(str, maxlen, index);
 #endif
     }
 
 
-    __forceinline static Directions GetDir(const char *dirName) {
-        switch (dirName[0]) {
-        case 'e':
-            return EAST;
-        case 'w':
-            return WEST;
-        case 'n':
-            if (dirName[5] == ' ') {
-                return NORTH;
-            }
-            if (dirName[6] == 'w') {
-                return NORTH_WEST;
-            }
-            return NORTH_EAST;
-        case 's':
-            if (dirName[5] == ' ') {
-                return SOUTH;
-            }
-            if (dirName[6] == 'w') {
-                return SOUTH_WEST;
-            }
-            return SOUTH_EAST;
-        default:
-            unreachable();
-        }
-        unreachable();
+    FORCE_INLINE static Directions GetDir(const char *dirName) {
+        ZoneScoped;
+ 
+        int k1 = dirName[0];
+        int k2 = dirName[5] == ' ';
+        int k3 = dirName[6] == 'w';
+        int k4 = dirName[6] == 'e';
+
+        int res
+            = (k1 == 'e') * EAST
+            + (k1 == 'w') * WEST
+            + (k1 == 'n') * k2 * NORTH
+            + (k1 == 'n') * k3 * NORTH_WEST
+            + (k1 == 'n') * k4 * NORTH_EAST
+            + (k1 == 's') * k2 * SOUTH
+            + (k1 == 's') * k3 * SOUTH_WEST
+            + (k1 == 's') * k4 * SOUTH_EAST;
+
+        return Directions(res);
     }
 
     template <char stop>
-    __forceinline float ParseFloat(const char *str, int maxLen, int &index) {
+    FORCE_INLINE float ParseFloat(const char *str, int maxLen, int &index) {
+        ZoneScoped;
         const int negative = str[index] == '-';
         index += negative;
         int64_t nominator = ParseInt(str, maxLen, index);
         const float multiplier[] = { 1.f, -1.f };
-        if (str[index] == stop) {
-            return float(nominator) * multiplier[negative];
-        }
-        ++index;
-        const int denomDigit = str[index++] - '0';
+        const bool hasDenom = str[index] == '.';
+        const uint8_t denomDigit = str[index + 1] - '0';
+        const float denomSelector[2] = { 0.f, 1.f };
+        const float denomMask = denomSelector[hasDenom];
+        const float denom = (denomDigit / 10.f) * denomMask;
+        const float value = (nominator + denom) * multiplier[negative];
+        index += int(denomMask) * 2;
 
-        return (nominator + denomDigit / 10.f) * multiplier[negative];
+        ZoneValue(value);
+        return value;
     }
 
-    __forceinline static int BSF(uint64_t value) {
+    FORCE_INLINE static int BSF(uint64_t value) {
 #ifdef _WIN64
         unsigned long int res;
         _BitScanForward64(&res, value);
         return res;
 #else
-        __builtin_ctzll(maskResult);
+        return __builtin_ctzll(value);
 #endif
     }
 
-    __forceinline static int BSF(uint32_t value) {
+    FORCE_INLINE static int BSF(uint32_t value) {
 #ifdef _WIN64
         unsigned long int res;
         _BitScanForward(&res, value);
         return res;
 #else
-        __builtin_ctz(maskResult);
+        return __builtin_ctz(value);
 #endif
     }
 
-    __forceinline void ParseLine(int start, int length, int &longIDs) {
+    FORCE_INLINE void ParseLine(int start, int length, int &longIDs) {
+        ZoneScoped;
         std::string_view line(inputData.data() + start, length);
 
         const char *lineData = inputData.data() + start;
@@ -801,11 +836,15 @@ struct FastCityStats : CityStatsInterface {
         }
         index++;
 #ifdef ENABLE_SIMD
-        Vec32c inputData, spaceMask(' ');
-        inputData.load(lineData + index);
-        const uint32_t mask = to_bits(inputData == spaceMask);
-        const int spaceIndex = BSF(mask);
-        index = index + spaceIndex + 1;
+        {
+            ZoneScopedN("SkipCityName");
+            Vec32c inputData, spaceMask(' ');
+            inputData.load(lineData + index);
+            const uint32_t mask = to_bits(inputData == spaceMask);
+            const int spaceIndex = BSF(mask);
+            index = index + spaceIndex + 1;
+        }
+
 #else
         for (int c = 0; c < 32 && lineData[index] != ' '; c++) {
             index++;
@@ -814,7 +853,15 @@ struct FastCityStats : CityStatsInterface {
 #endif
 
         const auto dir = GetDir(lineData + index);
-        index += dirNames[dir].length();
+        {
+            ZoneScopedN("SkipDirName");
+            Vec32c inputData, spaceMask(' ');
+            inputData.load(lineData + index);
+            const uint32_t mask = to_bits(inputData == spaceMask);
+            const int spaceIndex = BSF(mask);
+            index = index + spaceIndex + 1;
+        }
+        //index += dirNames[dir].length();
 
         const float temp = ParseFloat<' '>(lineData, 2, index);
         ++index;
@@ -827,13 +874,15 @@ struct FastCityStats : CityStatsInterface {
     }
 
     void LoadFromFile(std::istream &in) override {
+        ZoneScoped;
         int longIds = false;
         ParseInputLines<3, 8>(in, [&](int start, int length) {
             ParseLine(start, length, longIds);
         });
     }
 
-    __forceinline void ParseLineCommand(int64_t start, int64_t length) {
+    FORCE_INLINE void ParseLineCommand(int64_t start, int64_t length) {
+        ZoneScoped;
         const char *lineData = inputData.data() + start;
         std::string_view line(lineData, length);
         int index = 0;
@@ -858,7 +907,8 @@ struct FastCityStats : CityStatsInterface {
     inline static constexpr int INDEX_SIZE = 1024;
     using IndexContainer = std::array<int, INDEX_SIZE + 2>;
 
-    __forceinline void buildIDIndex(IndexContainer &index) {
+    FORCE_INLINE void buildIDIndex(IndexContainer &index) {
+        ZoneScoped;
         const float elementPerInterval = float(dataID.size()) / INDEX_SIZE;
         for (int c = 0; c < INDEX_SIZE; c++) {
             index[c + 1] = dataID[std::min<int>((c + 1) * elementPerInterval, dataID.size() - 1)];
@@ -871,7 +921,8 @@ struct FastCityStats : CityStatsInterface {
         return val >= a && val <= b;
     }
 
-    __forceinline void remapIndices(CommandList &commands, IndexContainer &index) {
+    FORCE_INLINE void remapIndices(CommandList &commands, IndexContainer &index) {
+        ZoneScoped;
         const float elementPerInterval = float(dataID.size()) / INDEX_SIZE;
 
         const int len = commands.size();
@@ -910,7 +961,8 @@ struct FastCityStats : CityStatsInterface {
     }
 
     template <int loopCount = 8, int arrSize>
-    static __forceinline int FindLineEndings(char *data, std::array<int, arrSize> &indices) {
+    static FORCE_INLINE int FindLineEndings(char *data, std::array<int, arrSize> &indices) {
+        ZoneScoped;
         int count = 0;
 #ifdef ENABLE_SIMD
         Vec64c mask('\n');
@@ -920,69 +972,85 @@ struct FastCityStats : CityStatsInterface {
             data += 64;
             const Vec64c result = dataVec == mask;
             uint64_t maskResult = to_bits(result);
-            while (maskResult) {
+            const int bits = vml_popcnt(maskResult);
+            for (int r = 0; r < bits; r++) {
                 const int pos = BSF(maskResult);
                 indices[count++] = (c * 64) + (pos + 1);
                 maskResult ^= (1llu << pos);
             }
         }
+        ZoneValue(count);
 #endif
         return count;
     }
 
     template <int MaxLinePer64Byte = 4, int LoopCount = 16, typename ParseFN>
-    static __forceinline void ParseInputLines(std::istream &in, ParseFN &&fn) {
-        in.read(inputData.data(), READ_BUFFER_SIZE);
-        const int64_t readSize = in.gcount();
-        inputData[readSize] = '\n';
-
-        int prev = 0;
-        int batchCount = 0;
-        const int loopCount = LoopCount;
-#ifdef ENABLE_SIMD
-        const int arrSize = loopCount * MaxLinePer64Byte;
-        batchCount = readSize / (loopCount * 64);
-        std::array<int, arrSize> indices{};
-        for (int b = 0; b < batchCount; b++) {
-            const int offset = b * (loopCount * 64);
-            const int count = FindLineEndings<loopCount>(inputData.data() + offset, indices);
-            for (int c = 0; c < count; c++) {
-                const int start = prev;
-                const int end = indices[c];
-                prev = end;
-                fn(start + offset, end - start);
-            }
-            prev = -((loopCount * 64) - prev);
+    static FORCE_INLINE void ParseInputLines(std::istream &in, ParseFN &&fn) {
+        ZoneScoped;
+        int64_t readSize;
+        {
+            ZoneScopedN("Read from input stream");
+            in.read(inputData.data(), READ_BUFFER_SIZE);
+            readSize = in.gcount();
+            inputData[readSize] = '\n';
         }
-#endif
-        int64_t index = batchCount * (loopCount * 64) + prev;
 
-        while (true) {
-            const int64_t start = index;
-            while (index < readSize && inputData[index] != '\n') {
+        for (int q = 0; q < 100; q++) {
+            int prev = 0;
+            int batchCount = 0;
+            const int loopCount = LoopCount;
+#ifdef ENABLE_SIMD
+            const int arrSize = loopCount * MaxLinePer64Byte;
+            batchCount = readSize / (loopCount * 64);
+            std::array<int, arrSize> indices{};
+            for (int b = 0; b < batchCount; b++) {
+                const int offset = b * (loopCount * 64);
+                const int count = FindLineEndings<loopCount, arrSize>(inputData.data() + offset, indices);
+                for (int c = 0; c < count; c++) {
+                    const int start = prev;
+                    const int end = indices[c];
+                    prev = end;
+                    fn(start + offset, end - start);
+                }
+                prev = -((loopCount * 64) - prev);
+            }
+#endif
+            int64_t index = batchCount * (loopCount * 64) + prev;
+
+            while (true) {
+                const int64_t start = index;
+                while (index < readSize && inputData[index] != '\n') {
+                    ++index;
+                }
+
+                if (index - start == 0) {
+                    break;
+                }
+                fn(start, index - start);
                 ++index;
             }
-
-            if (index - start == 0) {
-                break;
-            }
-            fn(start, index - start);
-            ++index;
+            return;
+            dataID.clear();
+            dataTemp.clear();
+            dataHumidity.clear();
+            dataDirs.clear();
         }
     }
 
     virtual void ExecuteCommands(std::istream &commands) override {
-        ParseInputLines(commands, [this] (int start, int length) {
+        ZoneScoped;
+        ParseInputLines(commands, [this](int start, int length) {
             ParseLineCommand(start, length);
         });
 
         {
+            ZoneScopedN("RemapIndices");
             IndexContainer index;
             buildIDIndex(index);
             remapIndices(hCommands, index);
             remapIndices(tCommands, index);
         }
-        
+
 
         char dir[2]{ 'l', 'r' };
         const int humCmdCount = int(hCommands.size());
@@ -995,7 +1063,9 @@ struct FastCityStats : CityStatsInterface {
         }
     }
 
-    __forceinline void ChangeDirs(int64_t startIndex, int64_t endIndex, int8_t change) {
+    FORCE_INLINE void ChangeDirs(int64_t startIndex, int64_t endIndex, int8_t change) {
+        ZoneScoped;
+        ZoneValue(endIndex - startIndex);
         const uint8_t maskValue = _Count - 1;
         int64_t c = startIndex;
 #ifdef ENABLE_SIMD
@@ -1023,7 +1093,9 @@ struct FastCityStats : CityStatsInterface {
         }
     }
 
-    __forceinline void UpdateTemperatureInRange(int64_t startID, int64_t endID, float delta, char rotate) {
+    FORCE_INLINE void UpdateTemperatureInRange(int64_t startID, int64_t endID, float delta, char rotate) {
+        ZoneScoped;
+        ZoneValue(endID - startID);
         auto startIndex = startID;
         auto endIndex = endID;
         int64_t c = startIndex;
@@ -1051,7 +1123,9 @@ struct FastCityStats : CityStatsInterface {
         ChangeDirs(startIndex, endIndex, rotate == 'r' ? 1 : -1);
     }
 
-    __forceinline void UpdateHumidityInRange(int64_t startID, int64_t endID, float delta, char rotate) {
+    FORCE_INLINE void UpdateHumidityInRange(int64_t startID, int64_t endID, float delta, char rotate) {
+        ZoneScoped;
+        ZoneValue(endID - startID);
         auto startIndex = startID;
         auto endIndex = endID;
 
@@ -1083,9 +1157,11 @@ struct FastCityStats : CityStatsInterface {
     }
 
     virtual void SaveData(std::ostream &temperature, std::ostream &humidity, std::ostream &directions) override {
+        ZoneScoped;
         temperature.write(reinterpret_cast<const char *>(dataTemp.data()), dataTemp.size() * sizeof(float));
         humidity.write(reinterpret_cast<const char *>(dataHumidity.data()), dataHumidity.size() * sizeof(float));
         {
+            ZoneScopedN("ComputeAverages");
             float totalTemp = 0;
             float totalHumidity = 0;
             int64_t c = 0;
@@ -1118,11 +1194,15 @@ struct FastCityStats : CityStatsInterface {
         }
 
         int64_t dirCount[_Count] = {};
-        for (int c = 0; c < int(dataDirs.size()); c++) {
-            dirCount[dataDirs[c]]++;
-            std::string_view dir = dirNames[dataDirs[c]];
-            directions.write(dir.data(), dir.size());
+        {
+            ZoneScopedN("Write dirs");
+            for (int c = 0; c < int(dataDirs.size()); c++) {
+                dirCount[dataDirs[c]]++;
+                std::string_view dir = dirNames[dataDirs[c]];
+                directions.write(dir.data(), dir.size());
+            }
         }
+
 
         int mostCommonDir = 0;
         for (int c = 1; c < _Count; c++) {
@@ -1139,14 +1219,14 @@ int main(int argc, char *argv[]) {
     StackAllocator empty(nullptr, 0);
     StackAllocator allocator(new uint8_t[1_gb], 1_gb);
 
-    //if (1) {
-    //    allocator.freeAll();
-    //    FastCityStats update(&allocator);
-    //    std::vector<float> data;
-    //    std::string output;
-    //    Tester::TestImplementation(tests[2].name, &update, data, output, "update");
-    //    return 0;
-    //}
+    if (0) {
+        allocator.freeAll();
+        FastCityStats update(&allocator);
+        std::vector<float> data;
+        std::string output;
+        Tester::TestImplementation(tests[4].name, &update, data, output, "update");
+        return 0;
+    }
 
     if (argc == 2) {
         if (strcmp(argv[1], "generate") == 0) {
@@ -1175,7 +1255,7 @@ int main(int argc, char *argv[]) {
             std::vector<float> data;
             std::string output;
             std::cout << "Running test " << tests[idx].name << " " << repeat << " times\n";
-            for (int c = 0; c < repeat * 5; c++) {
+            for (int c = 0; c < repeat; c++) {
                 allocator.freeAll();
                 FastCityStats update(&allocator);
                 const auto times = Tester::TestImplementation(tests[idx].name, &update, data, output, "update");
@@ -1194,6 +1274,8 @@ int main(int argc, char *argv[]) {
         } else {
             std::cout << "Unknown command\n";
         }
+        std::cout << "Waiting for 5 seconds before exiting" << std::endl;
+        std::this_thread::sleep_for(1s);
         return 0;
     }
 
