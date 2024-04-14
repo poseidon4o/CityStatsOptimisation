@@ -461,7 +461,7 @@ std::ostream &operator<<(std::ostream &out, const Tester::TestResult::Times &tim
     return out;
 }
 
-const int repeat = 3;
+const int repeat = 5;
 std::vector<TestDescription> tests = {
     {3, 1000, 10, "small", repeat},
     {100, 10'000, 10'000, "medium", repeat},
@@ -483,7 +483,7 @@ std::vector<TestDescription> tests = {
 #endif
 
 #define ENABLE_SIMD
-#define TRACY_ENABLE
+//#define TRACY_ENABLE
 
 #ifdef TRACY_ENABLE
 #include "tracy/public/tracy/Tracy.hpp"
