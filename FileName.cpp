@@ -618,6 +618,111 @@ struct AlignedArrayPtr {
 #endif
 }
 
+namespace {
+    FORCE_INLINE static int BSF(uint64_t value) {
+#ifdef _WIN64
+        unsigned long int res;
+        _BitScanForward64(&res, value);
+        return res;
+#else
+        return __builtin_ctzll(value);
+#endif
+    }
+
+    FORCE_INLINE static int BSF(uint32_t value) {
+#ifdef _WIN64
+        unsigned long int res;
+        _BitScanForward(&res, value);
+        return res;
+#else
+        return __builtin_ctz(value);
+#endif
+    }
+
+    FORCE_INLINE static int BSR(uint64_t value) {
+#ifdef _WIN64
+        unsigned long int res;
+        _BitScanReverse64(&res, value);
+        return res;
+#else
+        return __builtin_clzll(value);
+#endif
+    }
+
+    FORCE_INLINE static int BSR(uint32_t value) {
+#ifdef _WIN64
+        unsigned long int res;
+        _BitScanReverse(&res, value);
+        return res;
+#else
+        return __builtin_clz(value);
+#endif
+    }
+
+    template <int MaxLen>
+    FORCE_INLINE int ParseInt(const char *str, int &index) {
+        ZoneScoped;
+        int value = 0;
+        const int start = index;
+        for (int c = 0; c < MaxLen && str[index] != ' ' && str[index] != '\n' && str[index] != '.'; index++, c++) {
+            value = value * 10 + str[index] - '0';
+        }
+        ZoneValue(value);
+        return value;
+    }
+
+    template <>
+    FORCE_INLINE int ParseInt<2>(const char *str, int &index) {
+        ZoneScoped;
+        unsigned d1 = str[index] - '0';
+        unsigned d2 = str[index + 1] - '0';
+        int k2 = d2 < 10;
+        const int value = d1 * (k2 * 10) + d1 * !k2 + d2 * k2;
+        ZoneValue(value);
+        index += 1 + k2;
+        return value;
+    }
+
+    //template <>
+    //FORCE_INLINE int ParseInt<4>(const char *str, int &index) {
+    //    ZoneScoped;
+
+    //    Vec16uc digits;
+    //    digits.load(str + index);
+    //    digits = digits & Vec4i(-1, 0, 0, 0);
+    //    digits = digits - Vec16uc('0');
+    //    auto vMask = digits < Vec16uc(10);
+    //    const uint32_t mask = to_bits(vMask);
+    //    const int stopIndex = BSR(mask) + 1;
+    //    index = index + stopIndex;
+
+    //    int multipliers[8] = {
+    //        1000,
+    //        100,
+    //        10,
+    //        1,
+    //    };
+
+    //    auto filteredDigits = digits & vMask;
+    //    Vec4i digitNumbers = _mm_cvtepu8_epi32(filteredDigits);
+    //    Vec4i powers;
+    //    powers.load(multipliers + (4 - stopIndex));
+
+    //    Vec4i lo = _mm_mul_epi32(powers, digitNumbers);
+    //    Vec4i hi = _mm_shuffle_epi32(digitNumbers, 0b10'11'00'01);
+    //    Vec4i hiPowers = _mm_shuffle_epi32(powers, 0b10'11'00'01);
+    //    hi = _mm_mul_epi32(hi, hiPowers);
+
+    //    Vec4i subSum = _mm_add_epi64(lo, hi);
+    //    hi = _mm_unpackhi_epi64(subSum, subSum);
+    //    Vec4i sum = _mm_add_epi64(subSum, hi);
+    //    const int value = _mm_cvtsi128_si64(sum);
+
+    //    ZoneValue(value);
+    //    return value;
+    //}
+};
+
 struct FastCityStats : CityStatsInterface {
     enum Directions : uint8_t {
         NORTH,
@@ -723,18 +828,7 @@ struct FastCityStats : CityStatsInterface {
         inputData.resize(0);
     }
 
-    FORCE_INLINE static int ParseInt(const char *str, int maxlen, int &index) {
-        ZoneScoped;
-        int value = 0;
-        const int start = index;
-        for (int c = 0; c < maxlen && str[index] != ' ' && str[index] != '\n' && str[index] != '.'; index++, c++) {
-            value = value * 10 + str[index] - '0';
-        }
-        ZoneValue(value);
-        return value;
-    }
-
-    FORCE_INLINE static int ParseIntSimd(const char *str, int maxlen, int &index) {
+    FORCE_INLINE static int ParseIntSimd(const char *str, int &index) {
         ZoneScoped;
 #ifdef ENABLE_SIMD
         constexpr int multipliers[16] = {
@@ -765,14 +859,14 @@ struct FastCityStats : CityStatsInterface {
         return value;
 
 #else
-        return ParseInt(str, maxlen, index);
+        return ParseInt<ID_MAX_DIGIT>(str, index);
 #endif
     }
 
 
     FORCE_INLINE static Directions GetDir(const char *dirName) {
         ZoneScoped;
- 
+
         int k1 = dirName[0];
         int k2 = dirName[5] == ' ';
         int k3 = dirName[6] == 'w';
@@ -792,11 +886,11 @@ struct FastCityStats : CityStatsInterface {
     }
 
     template <char stop>
-    FORCE_INLINE float ParseFloat(const char *str, int maxLen, int &index) {
+    FORCE_INLINE float ParseFloat(const char *str, int &index) {
         ZoneScoped;
         const int negative = str[index] == '-';
         index += negative;
-        int64_t nominator = ParseInt(str, maxLen, index);
+        int64_t nominator = ParseInt<2>(str, index);
         const float multiplier[] = { 1.f, -1.f };
         const bool hasDenom = str[index] == '.';
         const uint8_t denomDigit = str[index + 1] - '0';
@@ -810,39 +904,17 @@ struct FastCityStats : CityStatsInterface {
         return value;
     }
 
-    FORCE_INLINE static int BSF(uint64_t value) {
-#ifdef _WIN64
-        unsigned long int res;
-        _BitScanForward64(&res, value);
-        return res;
-#else
-        return __builtin_ctzll(value);
-#endif
-    }
-
-    FORCE_INLINE static int BSF(uint32_t value) {
-#ifdef _WIN64
-        unsigned long int res;
-        _BitScanForward(&res, value);
-        return res;
-#else
-        return __builtin_ctz(value);
-#endif
-    }
-
-    FORCE_INLINE void ParseLine(int start, int length, int &longIDs) {
+    template <bool IsSmallID>
+    FORCE_INLINE void ParseLine(int start, int length) {
         ZoneScoped;
-        std::string_view line(inputData.data() + start, length);
-
         const char *lineData = inputData.data() + start;
 
         int index = 0;
         int id;
-        if (longIDs) {
-            id = ParseIntSimd(lineData, ID_MAX_DIGIT, index);
+        if constexpr (IsSmallID) {
+            id = ParseInt<4>(lineData, index);
         } else {
-            id = ParseInt(lineData, ID_MAX_DIGIT, index);
-            longIDs = index > 4;
+            id = ParseIntSimd(lineData, index);
         }
         index++;
 #ifdef ENABLE_SIMD
@@ -865,9 +937,9 @@ struct FastCityStats : CityStatsInterface {
         const auto dir = GetDir(lineData + index);
         index += dirNameLengths[dir];
 
-        const float temp = ParseFloat<' '>(lineData, 2, index);
+        const float temp = ParseFloat<' '>(lineData, index);
         ++index;
-        const float hum = ParseFloat<'\n'>(lineData, 2, index);
+        const float hum = ParseFloat<'\n'>(lineData, index);
 
         dataID.push_back(id);
         dataTemp.push_back(temp);
@@ -877,10 +949,14 @@ struct FastCityStats : CityStatsInterface {
 
     void LoadFromFile(std::istream &in) override {
         ZoneScoped;
-        int longIds = false;
-        ParseInputLines<3, 8>(in, [&](int start, int length) {
-            ParseLine(start, length, longIds);
-        });
+        ParseInputLines<200, 3, 8>(in, 
+            [&](int start, int length) {
+                ParseLine<true>(start, length);
+            },
+            [&](int start, int length) {
+                ParseLine<false>(start, length);
+            }
+        );
     }
 
     FORCE_INLINE void ParseLineCommand(int64_t start, int64_t length) {
@@ -891,11 +967,11 @@ struct FastCityStats : CityStatsInterface {
         const char type = lineData[index];
         index += 2;
         Command cmd;
-        cmd.start = ParseInt(lineData, ID_MAX_DIGIT, index);
+        cmd.start = ParseInt<ID_MAX_DIGIT>(lineData, index);
         index++;
-        cmd.end = ParseInt(lineData, ID_MAX_DIGIT, index);
+        cmd.end = ParseInt<ID_MAX_DIGIT>(lineData, index);
         index++;
-        cmd.delta = ParseFloat<' '>(lineData, 2, index);
+        cmd.delta = ParseFloat<' '>(lineData, index);
         index++;
         const char rot = lineData[index++];
         cmd.isRightRotate = rot == 'r';
@@ -986,8 +1062,8 @@ struct FastCityStats : CityStatsInterface {
         return count;
     }
 
-    template <int MaxLinePer64Byte = 4, int LoopCount = 16, typename ParseFN>
-    static FORCE_INLINE void ParseInputLines(std::istream &in, ParseFN &&fn) {
+    template <int shortIdLimit, int MaxLinePer64Byte = 4, int LoopCount = 16, typename ParseFNShortID, typename ParseFNLongID>
+    static FORCE_INLINE void ParseInputLines(std::istream &in, ParseFNShortID &&smallParse, ParseFNLongID &&largeParse) {
         ZoneScoped;
         int64_t readSize;
         {
@@ -1005,14 +1081,30 @@ struct FastCityStats : CityStatsInterface {
             const int arrSize = loopCount * MaxLinePer64Byte;
             batchCount = readSize / (loopCount * 64);
             std::array<int, arrSize> indices{};
-            for (int b = 0; b < batchCount; b++) {
+
+            const int smallBatchCount = std::min(shortIdLimit / MaxLinePer64Byte, batchCount);
+            int b = 0;
+
+            for (; b < smallBatchCount; b++) {
                 const int offset = b * (loopCount * 64);
                 const int count = FindLineEndings<loopCount, arrSize>(inputData.data() + offset, indices);
                 for (int c = 0; c < count; c++) {
                     const int start = prev;
                     const int end = indices[c];
                     prev = end;
-                    fn(start + offset, end - start);
+                    smallParse(start + offset, end - start);
+                }
+                prev = -((loopCount * 64) - prev);
+            }
+
+            for (; b < batchCount; b++) {
+                const int offset = b * (loopCount * 64);
+                const int count = FindLineEndings<loopCount, arrSize>(inputData.data() + offset, indices);
+                for (int c = 0; c < count; c++) {
+                    const int start = prev;
+                    const int end = indices[c];
+                    prev = end;
+                    largeParse(start + offset, end - start);
                 }
                 prev = -((loopCount * 64) - prev);
             }
@@ -1028,7 +1120,7 @@ struct FastCityStats : CityStatsInterface {
                 if (index - start == 0) {
                     break;
                 }
-                fn(start, index - start);
+                largeParse(start, index - start);
                 ++index;
             }
             return;
@@ -1041,9 +1133,13 @@ struct FastCityStats : CityStatsInterface {
 
     virtual void ExecuteCommands(std::istream &commands) override {
         ZoneScoped;
-        ParseInputLines(commands, [this](int start, int length) {
+        ParseInputLines<0>(commands,
+            [this](int start, int length) {
             ParseLineCommand(start, length);
-        });
+        }, [this](int start, int length) {
+            ParseLineCommand(start, length);
+        }
+        );
 
         {
             ZoneScopedN("RemapIndices");
