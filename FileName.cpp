@@ -778,6 +778,19 @@ struct FastCityStats : CityStatsInterface {
         int k3 = dirName[6] == 'w';
         int k4 = dirName[6] == 'e';
 
+        //int dir = -1;
+        //dir = k1 == 'e' ? EAST : dir;
+        //dir = k1 == 'w' ? WEST : dir;
+
+        //dir = k1 == 'n' && k2 ? NORTH : dir;
+        //dir = k1 == 'n' && k3 ? NORTH_WEST : dir;
+        //dir = k1 == 'n' && k4 ? NORTH_EAST : dir;
+
+        //dir = k1 == 's' && k2 ? SOUTH : dir;
+        //dir = k1 == 's' && k3 ? SOUTH_WEST : dir;
+        //dir = k1 == 's' && k4 ? SOUTH_EAST : dir;
+        //return Directions(dir);
+
         int res
             = (k1 == 'e') * EAST
             + (k1 == 'w') * WEST
