@@ -1,0 +1,61 @@
+946ms 929ms 108ms | 41ms 4883us 28ms
+948ms 938ms 109ms | 42ms 4012us 28ms
+947ms 933ms 109ms | 41ms 4228us 28ms
+945ms 935ms 110ms | 40ms 4223us 28ms
+Average base: 1989ms Average update: 75ms
+Best base: 946ms 929ms 108ms Best update: 40ms 4223us 28ms
+
+Best load speedup: 23.0946x
+Best commands speedup: 220.089x
+Best save speedup: 3.82167x
+
+Total Speedup: 26.4305x
+----------------------------------------
+Results for many-updates
+base(load, commands, save) | update(load, commands, save)
+1056us 9672ms 119us | 54us 105ms 40us
+993us 9690ms 120us | 50us 103ms 45us
+978us 9689ms 123us | 50us 108ms 51us
+979us 9672ms 122us | 59us 103ms 40us
+1003us 9677ms 124us | 57us 104ms 44us
+Average base: 9681ms Average update: 105ms
+Best base: 1056us 9672ms 119us Best update: 50us 103ms 45us
+
+Best load speedup: 20.8794x
+Best commands speedup: 93.5877x
+Best save speedup: 2.65854x
+
+Total Speedup: 92.0351x
+----------------------------------------
+Results for small
+base(load, commands, save) | update(load, commands, save)
+1044us 127us 129us | 49us 7600ns 40us
+1029us 125us 122us | 60us 11us 48us
+1140us 129us 120us | 81us 18us 58us
+1014us 123us 119us | 54us 9100ns 44us
+980us 121us 132us | 52us 9500ns 44us
+Average base: 1291us Average update: 118us
+Best base: 980us 121us 132us Best update: 49us 7600ns 40us
+
+Best load speedup: 20.0041x
+Best commands speedup: 15.9605x
+Best save speedup: 3.26733x
+
+Total Speedup: 10.9451x
+----------------------------------------
+Results for many-records
+base(load, commands, save) | update(load, commands, save)
+9592ms 9241ms 1098ms | 461ms 76ms 298ms
+9588ms 9223ms 1103ms | 426ms 97ms 300ms
+9645ms 9194ms 1090ms | 414ms 84ms 305ms
+9586ms 9202ms 1099ms | 416ms 76ms 306ms
+9687ms 9211ms 1100ms | 417ms 80ms 304ms
+Average base: 19s Average update: 813ms
+Best base: 9586ms 9202ms 1099ms Best update: 416ms 76ms 306ms
+
+Best load speedup: 23.0342x
+Best commands speedup: 120.526x
+Best save speedup: 3.5913x
+
+Total Speedup: 24.5119x
+----------------------------------------
