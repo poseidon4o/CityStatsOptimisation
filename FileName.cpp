@@ -1066,15 +1066,21 @@ struct FastCityStats : CityStatsInterface {
             remapIndices(tCommands, index);
         }
 
-
-        char dir[2]{ 'l', 'r' };
         const int humCmdCount = int(hCommands.size());
         const int tempCmdCount = int(tCommands.size());
         for (int c = 0; c < humCmdCount; c++) {
-            UpdateHumidityInRange(hCommands.start[c], hCommands.end[c], hCommands.delta[c], dir[hCommands.isRightRotate[c]]);
+            UpdateHumidityInRange(hCommands.start[c], hCommands.end[c], hCommands.delta[c]);
         }
         for (int c = 0; c < tempCmdCount; c++) {
-            UpdateTemperatureInRange(tCommands.start[c], tCommands.end[c], tCommands.delta[c], dir[tCommands.isRightRotate[c]]);
+            UpdateTemperatureInRange(tCommands.start[c], tCommands.end[c], tCommands.delta[c]);
+        }
+
+        const int8_t change[2]{ -1, 1 };
+        for (int c = 0; c < humCmdCount; c++) {
+            ChangeDirs(hCommands.start[c], hCommands.end[c], change[hCommands.isRightRotate[c]]);
+        }
+        for (int c = 0; c < tempCmdCount; c++) {
+            ChangeDirs(tCommands.start[c], tCommands.end[c], change[tCommands.isRightRotate[c]]);
         }
     }
 
@@ -1108,7 +1114,7 @@ struct FastCityStats : CityStatsInterface {
         }
     }
 
-    FORCE_INLINE void UpdateTemperatureInRange(int64_t startID, int64_t endID, float delta, char rotate) {
+    FORCE_INLINE void UpdateTemperatureInRange(int64_t startID, int64_t endID, float delta) {
         ZoneScoped;
         ZoneValue(endID - startID);
         auto startIndex = startID;
@@ -1134,11 +1140,9 @@ struct FastCityStats : CityStatsInterface {
         for (; c < endIndex; c++) {
             dataTemp[c] += delta;
         }
-
-        ChangeDirs(startIndex, endIndex, rotate == 'r' ? 1 : -1);
     }
 
-    FORCE_INLINE void UpdateHumidityInRange(int64_t startID, int64_t endID, float delta, char rotate) {
+    FORCE_INLINE void UpdateHumidityInRange(int64_t startID, int64_t endID, float delta) {
         ZoneScoped;
         ZoneValue(endID - startID);
         auto startIndex = startID;
@@ -1167,8 +1171,6 @@ struct FastCityStats : CityStatsInterface {
         for (; c < endIndex; c++) {
             dataHumidity[c] = std::clamp(dataHumidity[c] + delta, 0.f, 100.f);
         }
-
-        ChangeDirs(startIndex, endIndex, rotate == 'r' ? 1 : -1);
     }
 
     virtual void SaveData(std::ostream &temperature, std::ostream &humidity, std::ostream &directions) override {
