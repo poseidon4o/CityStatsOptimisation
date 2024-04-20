@@ -263,7 +263,7 @@ struct TestDescription {
     int64_t itemCount;
     int64_t updateCount;
     std::string name;
-    int repeat = 10;
+    int repeat = 10; 
 };
 
 struct DataGenerator {
@@ -723,20 +723,31 @@ struct FastCityStats : CityStatsInterface {
         inputData.resize(0);
     }
 
-    FORCE_INLINE static int ParseInt(const char *str, int maxlen, int &index) {
+
+    FORCE_INLINE static int ParseInt(const char *str, int MaxLen) {
         ZoneScoped;
         int value = 0;
-        const int start = index;
-        for (int c = 0; c < maxlen && str[index] != ' ' && str[index] != '\n' && str[index] != '.'; index++, c++) {
-            value = value * 10 + str[index] - '0';
+        for (int c = 0; c < MaxLen; c++) {
+            value = value * 10 + str[c] - '0';
         }
         ZoneValue(value);
         return value;
     }
 
-    FORCE_INLINE static int ParseIntSimd(const char *str, int maxlen, int &index) {
+    template <int MaxLen>
+    FORCE_INLINE static int ParseInt(const char *str) {
         ZoneScoped;
-#ifdef ENABLE_SIMD
+        int value = 0;
+        for (int c = 0; c < MaxLen; c++) {
+            value = value * 10 + str[c] - '0';
+        }
+        ZoneValue(value);
+        return value;
+    }
+
+    FORCE_INLINE static int ParseIntSimd(const char *str, int digitCount) {
+        ZoneScoped;
+
         constexpr int multipliers[16] = {
             10'000'000,
             1'000'000,
@@ -747,26 +758,27 @@ struct FastCityStats : CityStatsInterface {
             10,
             1,
         };
+        const Vec8i digitMasks[] = {
+            Vec8ib(1, 1, 1, 1, 0, 0, 0, 0), // 4
+            Vec8ib(1, 1, 1, 1, 1, 0, 0, 0), // 5
+            Vec8ib(1, 1, 1, 1, 1, 1, 0, 0), // 6
+            Vec8ib(1, 1, 1, 1, 1, 1, 1, 0), // 7
+            Vec8ib(1, 1, 1, 1, 1, 1, 1, 1), // 8
+        };
 
-        const Vec16c maskSpace(' '), maskNewLine('\n'), maskDot('.');
         Vec16c digits;
-        digits.load(str + index);
+        digits.load(str);
 
-        Vec16cb stopMask = (digits == maskSpace) | (digits == maskNewLine) | (digits == maskDot);
-        const int stopIndex = BSF(uint32_t(to_bits(stopMask)));
+
         digits = digits - Vec16c('0');
         Vec8i powers, digitNumbers = _mm256_cvtepi8_epi32(digits);
-        powers.load(multipliers + (8 - stopIndex));
+        powers.load(multipliers + (8 - digitCount));
+        powers = powers & digitMasks[digitCount - 4];
 
         auto parts = powers * digitNumbers;
-        index += stopIndex;
-        const int value = horizontal_add_x(parts);
+        const int value = horizontal_add(parts);
         ZoneValue(value);
         return value;
-
-#else
-        return ParseInt(str, maxlen, index);
-#endif
     }
 
 
@@ -805,19 +817,25 @@ struct FastCityStats : CityStatsInterface {
     }
 
     template <char stop>
-    FORCE_INLINE float ParseFloat(const char *str, int maxLen, int &index) {
+    FORCE_INLINE float ParseFloat(const char *str) {
         ZoneScoped;
-        const int negative = str[index] == '-';
-        index += negative;
-        int64_t nominator = ParseInt(str, maxLen, index);
+
+        const int negative = str[0] == '-';
+
+        const int hasSecondDigit = ((str[negative + 1] != '.') + (str[negative + 1] != ' ') + (str[negative + 1] != stop)) / 3;
+        const int nominator = ParseInt(str + negative, 1 + hasSecondDigit);
+
+        const int lenSelector[2] = { 1, 2 };
+        const int nominatorLen = lenSelector[nominator > 9];
+        const int nominatorSkip = negative + nominatorLen;
+
         const float multiplier[] = { 1.f, -1.f };
-        const bool hasDenom = str[index] == '.';
-        const uint8_t denomDigit = str[index + 1] - '0';
+        const bool hasDenom = str[nominatorSkip] == '.';
+        const uint8_t denomDigit = str[nominatorSkip + 1] - '0';
         const float denomSelector[2] = { 0.f, 1.f };
         const float denomMask = denomSelector[hasDenom];
         const float denom = (denomDigit / 10.f) * denomMask;
         const float value = (nominator + denom) * multiplier[negative];
-        index += int(denomMask) * 2;
 
         ZoneValue(value);
         return value;
@@ -843,44 +861,38 @@ struct FastCityStats : CityStatsInterface {
 #endif
     }
 
-    FORCE_INLINE void ParseLine(int start, int length, int &longIDs) {
+    FORCE_INLINE void ParseLine(int start, const int * __restrict delimiters) {
         ZoneScoped;
-        std::string_view line(inputData.data() + start, length);
+        const char * data = inputData.data();
+        const char *lineStart = data + start;
+        const int idDigitCount = delimiters[0] - start - 1;
 
-        const char *lineData = inputData.data() + start;
+        //std::string_view line(data + start, data + delimiters[4]);
+        //std::string_view idS(data + start, data + delimiters[0]);
+        //std::string_view city(data + delimiters[0], data + delimiters[1]);
+        //std::string_view dirName(data + delimiters[1], data + delimiters[2]);
+        //std::string_view tempS(data + delimiters[2], data + delimiters[3]);
+        //std::string_view humiS(data + delimiters[3], line.data() + line.length());
+        //const int iCount = idS.length() - 1;
+        //assert(iCount == idDigitCount);
+        //if (idDigitCount < 1 || idDigitCount > 8) {
+        //    assert(false);
+        //}
 
-        int index = 0;
         int id;
-        if (longIDs) {
-            id = ParseIntSimd(lineData, ID_MAX_DIGIT, index);
+        if (idDigitCount >= 4) {
+            id = ParseIntSimd(lineStart, idDigitCount);
         } else {
-            id = ParseInt(lineData, ID_MAX_DIGIT, index);
-            longIDs = index > 4;
-        }
-        index++;
-#ifdef ENABLE_SIMD
-        {
-            ZoneScopedN("SkipCityName");
-            Vec32c inputData, spaceMask(' ');
-            inputData.load(lineData + index);
-            const uint32_t mask = to_bits(inputData == spaceMask);
-            const int spaceIndex = BSF(mask);
-            index = index + spaceIndex + 1;
+            id = ParseInt(lineStart, idDigitCount);
         }
 
-#else
-        for (int c = 0; c < 32 && lineData[index] != ' '; c++) {
-            index++;
-        }
-        index++;
-#endif
+        const int dirStart = delimiters[1];
+        const auto dir = GetDir(data + dirStart);
 
-        const auto dir = GetDir(lineData + index);
-        index += dirNameLengths[dir];
-
-        const float temp = ParseFloat<' '>(lineData, 2, index);
-        ++index;
-        const float hum = ParseFloat<'\n'>(lineData, 2, index);
+        const int tempStart = delimiters[2];
+        const float temp = ParseFloat<' '>(data + tempStart);
+        const int humStart = delimiters[3];
+        const float hum = ParseFloat<'\n'>(data + humStart);
 
         dataID.push_back(id);
         dataTemp.push_back(temp);
@@ -890,28 +902,26 @@ struct FastCityStats : CityStatsInterface {
 
     void LoadFromFile(std::istream &in) override {
         ZoneScoped;
-        int longIds = false;
-        ParseInputLines<3, 8>(in, [&](int start, int length) {
-            ParseLine(start, length, longIds);
+        ParseInputLines<3, 8>(in, [&](int start, const int *spaceIndices) {
+            ParseLine(start, spaceIndices);
         });
     }
 
-    FORCE_INLINE void ParseLineCommand(int64_t start, int64_t length) {
+    FORCE_INLINE void ParseLineCommand(int start, const int *delimiters) {
         ZoneScoped;
         const char *lineData = inputData.data() + start;
-        std::string_view line(lineData, length);
-        int index = 0;
-        const char type = lineData[index];
-        index += 2;
+        const char *data = inputData.data();
+        // std::string_view line(data + start, data + delimiters[4]);
+
+        const char type = *lineData;
+
         Command cmd;
-        cmd.start = ParseInt(lineData, ID_MAX_DIGIT, index);
-        index++;
-        cmd.end = ParseInt(lineData, ID_MAX_DIGIT, index);
-        index++;
-        cmd.delta = ParseFloat<' '>(lineData, 2, index);
-        index++;
-        const char rot = lineData[index++];
+        cmd.start = ParseInt(data + delimiters[0], delimiters[1] - delimiters[0] - 1);
+        cmd.end = ParseInt(data + delimiters[1], delimiters[2] - delimiters[1] - 1);
+        cmd.delta = ParseFloat<' '>(data + delimiters[2]);
+        const char rot = *(data + delimiters[3]);
         cmd.isRightRotate = rot == 'r';
+        // TODO avoid if
         if (type == 't') {
             tCommands.push_back(cmd);
         } else {
@@ -976,33 +986,42 @@ struct FastCityStats : CityStatsInterface {
     }
 
     template <int loopCount = 8, int arrSize>
-    static FORCE_INLINE int FindLineEndings(char *data, std::array<int, arrSize> &indices) {
+    static FORCE_INLINE void FindLineEndings(char *data, std::array<int, arrSize> &delimiters, int &delimiterCount, int indexOffset) {
         ZoneScoped;
-        int count = 0;
 #ifdef ENABLE_SIMD
-        Vec64c mask('\n');
+        const Vec64c newLineMask('\n'), spaceMask(' ');
+        std::string_view dataS(data, data + 64);
         Vec64c dataVec;
+        char *start = data;
         for (int c = 0; c < loopCount; c++) {
             dataVec.load(data);
             data += 64;
-            const Vec64c result = dataVec == mask;
-            uint64_t maskResult = to_bits(result);
-            const int bits = vml_popcnt(maskResult);
-            for (int r = 0; r < bits; r++) {
-                const int pos = BSF(maskResult);
-                indices[count++] = (c * 64) + (pos + 1);
-                maskResult ^= (1llu << pos);
+
+            const Vec64cb newLineMaskV = dataVec == newLineMask;
+            const Vec64cb spaceMaskV = dataVec == spaceMask;
+            const Vec64cb delimiterMask = newLineMaskV || spaceMaskV;
+
+            uint64_t delimiterBitmask = to_bits(delimiterMask);
+            const int delimiterBits = vml_popcnt(delimiterBitmask);
+            for (int r = 0; r < delimiterBits; r++) {
+                const int pos = BSF(delimiterBitmask);
+                delimiters[delimiterCount++] = (c * 64) + (pos + 1) + indexOffset;
+                //if (delimiterCount > 1) {
+                //    std::string_view part = std::string_view(inputData.data()  + delimiters[delimiterCount - 2], inputData.data() + delimiters[delimiterCount - 1]);
+                //    assert(part.length() >= 1);
+                //    assert(part.length() <= 32);
+                //}
+                delimiterBitmask ^= (1llu << pos);
             }
         }
-        ZoneValue(count);
+        ZoneValue(delimiterCount);
 #endif
-        return count;
     }
 
     template <int MaxLinePer64Byte = 4, int LoopCount = 16, typename ParseFN>
     static FORCE_INLINE void ParseInputLines(std::istream &in, ParseFN &&fn) {
         ZoneScoped;
-        int64_t readSize;
+        int readSize;
         {
             ZoneScopedN("Read from input stream");
             in.read(inputData.data(), READ_BUFFER_SIZE);
@@ -1010,38 +1029,62 @@ struct FastCityStats : CityStatsInterface {
             inputData[readSize] = '\n';
         }
 
-        for (int q = 0; q < 100; q++) {
-            int prev = 0;
-            int batchCount = 0;
-            const int loopCount = LoopCount;
-#ifdef ENABLE_SIMD
-            const int arrSize = loopCount * MaxLinePer64Byte;
-            batchCount = readSize / (loopCount * 64);
-            std::array<int, arrSize> indices{};
-            for (int b = 0; b < batchCount; b++) {
-                const int offset = b * (loopCount * 64);
-                const int count = FindLineEndings<loopCount, arrSize>(inputData.data() + offset, indices);
-                for (int c = 0; c < count; c++) {
-                    const int start = prev;
-                    const int end = indices[c];
-                    prev = end;
-                    fn(start + offset, end - start);
-                }
-                prev = -((loopCount * 64) - prev);
-            }
-#endif
-            int64_t index = batchCount * (loopCount * 64) + prev;
+        const int loopCount = LoopCount;
+        const int spacesPerLine = 4;
+        const int arrSize = (loopCount * MaxLinePer64Byte) * spacesPerLine;
+        const int delimitersPerLine = spacesPerLine + 1;
+        const int batchSize = LoopCount * 64;
+        const int leftover = readSize % batchSize;
+        const int batchCount = readSize / batchSize + (leftover > 0);
 
+        memset(inputData.aligned + readSize, 0, batchSize - leftover);
+
+        for (int q = 0; q < 100; q++) {
+#ifdef ENABLE_SIMD
+            int start = 0;
+            int delimiterCount = 0;
+            std::array<int, arrSize> delimiterIndices;
+            for (int b = 0; b < batchCount; b++) {
+                const int offset = b * batchSize;
+                FindLineEndings<loopCount, arrSize>(inputData.data() + offset, delimiterIndices, delimiterCount, offset);
+                const int lineCount = delimiterCount / delimitersPerLine;
+
+                for (int c = 0; c < lineCount; c++) {
+                    const int lineDelimiterOffset = c * delimitersPerLine;
+                    fn(start, delimiterIndices.data() + lineDelimiterOffset);
+                    start = delimiterIndices[lineDelimiterOffset + spacesPerLine];
+                }
+
+                const int remaining = delimiterCount % delimitersPerLine;
+                int f = 0;
+                for (int c = delimiterCount - remaining; c < delimiterCount; c++) {
+                    delimiterIndices[f++] = delimiterIndices[c];
+                }
+                delimiterCount = remaining;
+            }
+            return;
+            dataID.clear();
+            dataTemp.clear();
+            dataHumidity.clear();
+            dataDirs.clear();
+#endif
+            //assert(delimiterCount >= 1);
+            int index = start;
             while (true) {
-                const int64_t start = index;
+                const int start = index;
+                delimiterCount = 0;
                 while (index < readSize && inputData[index] != '\n') {
+                    if (inputData[index] == ' ') {
+                        delimiterIndices[delimiterCount++] = index + 1;
+                    }
                     ++index;
                 }
+                delimiterIndices[delimiterCount++] = index + 1;
 
                 if (index - start == 0) {
                     break;
                 }
-                fn(start, index - start);
+                fn(start, delimiterIndices.data());
                 ++index;
             }
             return;
@@ -1054,8 +1097,8 @@ struct FastCityStats : CityStatsInterface {
 
     virtual void ExecuteCommands(std::istream &commands) override {
         ZoneScoped;
-        ParseInputLines(commands, [this](int start, int length) {
-            ParseLineCommand(start, length);
+        ParseInputLines(commands, [this](int start, const int *delimiters) {
+            ParseLineCommand(start, delimiters);
         });
 
         {
@@ -1305,8 +1348,6 @@ int main(int argc, char *argv[]) {
         } else {
             std::cout << "Unknown command\n";
         }
-        std::cout << "Waiting for 5 seconds before exiting" << std::endl;
-        std::this_thread::sleep_for(1s);
         return 0;
     }
 
