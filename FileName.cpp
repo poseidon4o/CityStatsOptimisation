@@ -263,7 +263,7 @@ struct TestDescription {
     int64_t itemCount;
     int64_t updateCount;
     std::string name;
-    int repeat = 10; 
+    int repeat = 10;
 };
 
 struct DataGenerator {
@@ -724,7 +724,7 @@ struct FastCityStats : CityStatsInterface {
     }
 
 
-    FORCE_INLINE static int ParseInt(const char *str, int MaxLen) {
+    FORCE_INLINE static int ParseInt(const char *__restrict str, int MaxLen) {
         ZoneScoped;
         int value = 0;
         for (int c = 0; c < MaxLen; c++) {
@@ -745,7 +745,7 @@ struct FastCityStats : CityStatsInterface {
         return value;
     }
 
-    FORCE_INLINE static int ParseIntSimd(const char *str, int digitCount) {
+    FORCE_INLINE static int ParseIntSimd(const char *__restrict str, int digitCount) {
         ZoneScoped;
 
         constexpr int multipliers[16] = {
@@ -758,6 +758,7 @@ struct FastCityStats : CityStatsInterface {
             10,
             1,
         };
+        // TODO: remove reloads
         const Vec8i digitMasks[] = {
             Vec8ib(1, 1, 1, 1, 0, 0, 0, 0), // 4
             Vec8ib(1, 1, 1, 1, 1, 0, 0, 0), // 5
@@ -773,18 +774,17 @@ struct FastCityStats : CityStatsInterface {
         digits = digits - Vec16c('0');
         Vec8i powers, digitNumbers = _mm256_cvtepi8_epi32(digits);
         powers.load(multipliers + (8 - digitCount));
-        powers = powers & digitMasks[digitCount - 4];
 
         auto parts = powers * digitNumbers;
-        const int value = horizontal_add(parts);
+        const int value = horizontal_add(parts & digitMasks[digitCount - 4]);
         ZoneValue(value);
         return value;
     }
 
 
-    FORCE_INLINE static Directions GetDir(const char *dirName) {
+    FORCE_INLINE static Directions GetDir(const char *__restrict dirName) {
         ZoneScoped;
- 
+
         int k1 = dirName[0];
         int k2 = dirName[5] == ' ';
         int k3 = dirName[6] == 'w';
@@ -817,7 +817,7 @@ struct FastCityStats : CityStatsInterface {
     }
 
     template <char stop>
-    FORCE_INLINE float ParseFloat(const char *str) {
+    FORCE_INLINE float ParseFloat(const char *__restrict str) {
         ZoneScoped;
 
         const int negative = str[0] == '-';
@@ -861,9 +861,9 @@ struct FastCityStats : CityStatsInterface {
 #endif
     }
 
-    FORCE_INLINE void ParseLine(int start, const int * __restrict delimiters) {
+    FORCE_INLINE void ParseLine(int start, const int *__restrict delimiters) {
         ZoneScoped;
-        const char * data = inputData.data();
+        const char *data = inputData.data();
         const char *lineStart = data + start;
         const int idDigitCount = delimiters[0] - start - 1;
 
@@ -902,12 +902,12 @@ struct FastCityStats : CityStatsInterface {
 
     void LoadFromFile(std::istream &in) override {
         ZoneScoped;
-        ParseInputLines<3, 8>(in, [&](int start, const int *spaceIndices) {
+        ParseInputLines<3, 8>(in, [&](int start, const int *__restrict spaceIndices) {
             ParseLine(start, spaceIndices);
         });
     }
 
-    FORCE_INLINE void ParseLineCommand(int start, const int *delimiters) {
+    FORCE_INLINE void ParseLineCommand(int start, const int *__restrict delimiters) {
         ZoneScoped;
         const char *lineData = inputData.data() + start;
         const char *data = inputData.data();
@@ -946,7 +946,7 @@ struct FastCityStats : CityStatsInterface {
         return val >= a && val <= b;
     }
 
-    FORCE_INLINE void remapIndices(CommandList &commands, IndexContainer &index) {
+    FORCE_INLINE void remapIndices(CommandList &__restrict commands, IndexContainer &__restrict index) {
         ZoneScoped;
         const float elementPerInterval = float(dataID.size()) / INDEX_SIZE;
 
@@ -986,13 +986,13 @@ struct FastCityStats : CityStatsInterface {
     }
 
     template <int loopCount = 8, int arrSize>
-    static FORCE_INLINE void FindLineEndings(char *data, std::array<int, arrSize> &delimiters, int &delimiterCount, int indexOffset) {
+    static FORCE_INLINE void FindLineEndings(const char *__restrict data, std::array<int, arrSize> &__restrict delimiters, int &__restrict delimiterCount, int indexOffset) {
         ZoneScoped;
 #ifdef ENABLE_SIMD
         const Vec64c newLineMask('\n'), spaceMask(' ');
         std::string_view dataS(data, data + 64);
         Vec64c dataVec;
-        char *start = data;
+        const char *start = data;
         for (int c = 0; c < loopCount; c++) {
             dataVec.load(data);
             data += 64;
@@ -1019,7 +1019,7 @@ struct FastCityStats : CityStatsInterface {
     }
 
     template <int MaxLinePer64Byte = 4, int LoopCount = 16, typename ParseFN>
-    static FORCE_INLINE void ParseInputLines(std::istream &in, ParseFN &&fn) {
+    static NEVER_INLINE void ParseInputLines(std::istream &in, ParseFN &&fn) {
         ZoneScoped;
         int readSize;
         {
@@ -1097,7 +1097,7 @@ struct FastCityStats : CityStatsInterface {
 
     virtual void ExecuteCommands(std::istream &commands) override {
         ZoneScoped;
-        ParseInputLines(commands, [this](int start, const int *delimiters) {
+        ParseInputLines(commands, [this](int start, const int *__restrict delimiters) {
             ParseLineCommand(start, delimiters);
         });
 
