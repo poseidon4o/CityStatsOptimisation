@@ -745,6 +745,14 @@ struct FastCityStats : CityStatsInterface {
         return value;
     }
 
+    static inline const Vec4ib digitMasks[] = {
+        Vec4ib(0, 0, 0, 0), // 4
+        Vec4ib(1, 0, 0, 0), // 5
+        Vec4ib(1, 1, 0, 0), // 6
+        Vec4ib(1, 1, 1, 0), // 7
+        Vec4ib(1, 1, 1, 1), // 8
+    };
+
     FORCE_INLINE static int ParseIntSimd(const char *__restrict str, int digitCount) {
         ZoneScoped;
 
@@ -758,25 +766,17 @@ struct FastCityStats : CityStatsInterface {
             10,
             1,
         };
-        // TODO: remove reloads
-        const Vec8i digitMasks[] = {
-            Vec8ib(1, 1, 1, 1, 0, 0, 0, 0), // 4
-            Vec8ib(1, 1, 1, 1, 1, 0, 0, 0), // 5
-            Vec8ib(1, 1, 1, 1, 1, 1, 0, 0), // 6
-            Vec8ib(1, 1, 1, 1, 1, 1, 1, 0), // 7
-            Vec8ib(1, 1, 1, 1, 1, 1, 1, 1), // 8
-        };
 
         Vec16c digits;
         digits.load(str);
-
 
         digits = digits - Vec16c('0');
         Vec8i powers, digitNumbers = _mm256_cvtepi8_epi32(digits);
         powers.load(multipliers + (8 - digitCount));
 
         auto parts = powers * digitNumbers;
-        const int value = horizontal_add(parts & digitMasks[digitCount - 4]);
+        const Vec8i digitMask(Vec4ib(1, 1, 1, 1), digitMasks[digitCount - 4]);
+        const int value = horizontal_add(parts & digitMask);
         ZoneValue(value);
         return value;
     }
@@ -916,8 +916,8 @@ struct FastCityStats : CityStatsInterface {
         const char type = *lineData;
 
         Command cmd;
-        cmd.start = ParseInt(data + delimiters[0], delimiters[1] - delimiters[0] - 1);
-        cmd.end = ParseInt(data + delimiters[1], delimiters[2] - delimiters[1] - 1);
+        cmd.start = ParseIntSimd(data + delimiters[0], delimiters[1] - delimiters[0] - 1);
+        cmd.end = ParseIntSimd(data + delimiters[1], delimiters[2] - delimiters[1] - 1);
         cmd.delta = ParseFloat<' '>(data + delimiters[2]);
         const char rot = *(data + delimiters[3]);
         cmd.isRightRotate = rot == 'r';
