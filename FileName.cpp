@@ -1097,7 +1097,7 @@ struct FastCityStats : CityStatsInterface {
 
     virtual void ExecuteCommands(std::istream &commands) override {
         ZoneScoped;
-        ParseInputLines(commands, [this](int start, const int *__restrict delimiters) {
+        ParseInputLines<5>(commands, [this](int start, const int *__restrict delimiters) {
             ParseLineCommand(start, delimiters);
         });
 
