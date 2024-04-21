@@ -639,11 +639,26 @@ struct FastCityStats : CityStatsInterface {
 
     inline static constexpr int RESERVE_SIZE = 10'000'000;
 
+    struct CommandWriteCache {
+        inline static constexpr int BATCH_SIZE = 8;
+        inline static constexpr int BATCH_COUNT = 4;
+        inline static constexpr int QUE_SIZE = BATCH_SIZE * BATCH_COUNT;
+        alignas(64) int starts[QUE_SIZE];
+        alignas(64) int ends[QUE_SIZE];
+        alignas(64) float deltas[QUE_SIZE];
+        alignas(64) bool isRR[QUE_SIZE];
+    };
+
     struct CommandList {
         AlignedArrayPtr<int> start;
         AlignedArrayPtr<int> end;
         AlignedArrayPtr<float> delta;
         AlignedArrayPtr<bool> isRightRotate;
+        int qIndex = 0;
+        CommandWriteCache &cache;
+
+        CommandList(CommandWriteCache &cache) : qIndex(0), cache(cache) {
+        }
 
         void reserve() {
             start.reserve(RESERVE_SIZE);
@@ -663,12 +678,45 @@ struct FastCityStats : CityStatsInterface {
             return start.size();
         }
 
+        void dump(int count) {
+            for (int c = 0; c < CommandWriteCache::BATCH_COUNT; c++) {
+                const int offset = c * CommandWriteCache::BATCH_SIZE;
+                Vec8i s, e;
+                s.load_a(cache.starts + offset);
+                s.store_nt(start.aligned + start.count + offset);
+
+                e.load_a(cache.ends + offset);
+                e.store_nt(end.aligned + end.count + offset);
+
+                Vec8f d;
+                d.load_a(cache.deltas + offset);
+                d.store_nt(delta.aligned + delta.count + offset);
+            }
+
+            memcpy(isRightRotate.aligned + isRightRotate.count, cache.isRR, CommandWriteCache::QUE_SIZE);
+
+            start.count += count;
+            end.count += count;
+            delta.count += count;
+            isRightRotate.count += count;
+            qIndex = 0;
+        }
+
+        void dump() {
+            dump(qIndex);
+        }
+
         void push_back(const Command &cmd) {
             ZoneScoped;
-            start.push_back(cmd.start);
-            end.push_back(cmd.end);
-            delta.push_back(cmd.delta);
-            isRightRotate.push_back(cmd.isRightRotate);
+
+            cache.starts[qIndex] = cmd.start;
+            cache.ends[qIndex] = cmd.end;
+            cache.deltas[qIndex] = cmd.delta;
+            cache.isRR[qIndex] = cmd.isRightRotate;
+            qIndex++;
+            if (qIndex == CommandWriteCache::QUE_SIZE) {
+                dump(CommandWriteCache::QUE_SIZE);
+            }
         }
     };
 
@@ -677,7 +725,8 @@ struct FastCityStats : CityStatsInterface {
     inline static AlignedArrayPtr<float> dataHumidity;
     inline static AlignedArrayPtr<uint8_t> dataDirs;
     inline static AlignedArrayPtr<char> inputData;
-    inline static CommandList hCommands, tCommands;
+    inline static CommandWriteCache hCache, tCache;
+    inline static CommandList hCommands{ hCache }, tCommands{tCache};
 
     char dirNamesBuff[68] = { "north north-east east south-east south south-west west north-west " };
     std::string_view dirNames[8] = {
@@ -1031,7 +1080,7 @@ struct FastCityStats : CityStatsInterface {
 
         const int loopCount = LoopCount;
         const int spacesPerLine = 4;
-        const int arrSize = (loopCount * MaxLinePer64Byte) * spacesPerLine;
+        const int arrSize = (loopCount * MaxLinePer64Byte) * spacesPerLine + 100;
         const int delimitersPerLine = spacesPerLine + 1;
         const int batchSize = LoopCount * 64;
         const int leftover = readSize % batchSize;
@@ -1100,6 +1149,9 @@ struct FastCityStats : CityStatsInterface {
         ParseInputLines<5>(commands, [this](int start, const int *__restrict delimiters) {
             ParseLineCommand(start, delimiters);
         });
+
+        hCommands.dump();
+        tCommands.dump();
 
         {
             ZoneScopedN("RemapIndices");

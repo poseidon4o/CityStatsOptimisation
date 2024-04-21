@@ -1,96 +1,96 @@
-Results for large
-base(load, commands, save) | update(load, commands, save)
-47ms 8775ms 5732us | 2266us 22ms 1738us
-48ms 8748ms 5955us | 1987us 22ms 1619us
-47ms 8750ms 5774us | 2018us 22ms 1637us
-47ms 8744ms 5757us | 2017us 22ms 1914us
-47ms 8754ms 5816us | 1955us 21ms 1660us
-Average base: 8808ms Average update: 25ms
-Best base: 47ms 8744ms 5757us Best update: 1955us 21ms 1660us
-
-Best load speedup: 24.1497x
-Best commands speedup: 408.87x
-Best save speedup: 3.46822x
-
-Total Speedup: 342.57x
-----------------------------------------
 Results for many-records
 base(load, commands, save) | update(load, commands, save)
-9684ms 9123ms 1092ms | 445ms 58ms 306ms
-9711ms 9168ms 1096ms | 397ms 55ms 303ms
-9688ms 9140ms 1102ms | 395ms 56ms 300ms
-9727ms 9147ms 1095ms | 404ms 58ms 299ms
-9702ms 9159ms 1096ms | 399ms 57ms 298ms
-Average base: 19s Average update: 767ms
-Best base: 9684ms 9123ms 1092ms Best update: 395ms 56ms 300ms
+9863ms 9148ms 1102ms | 441ms 57ms 299ms
+9832ms 9158ms 1108ms | 393ms 56ms 298ms
+9812ms 9135ms 1110ms | 395ms 55ms 298ms
+9770ms 9157ms 1103ms | 404ms 59ms 299ms
+9791ms 9140ms 1101ms | 403ms 57ms 298ms
+Average base: 20s Average update: 763ms
+Best base: 9770ms 9157ms 1103ms Best update: 393ms 56ms 298ms
 
-Best load speedup: 24.482x
-Best commands speedup: 161.262x
-Best save speedup: 3.6424x
+Best load speedup: 24.8148x
+Best commands speedup: 163.11x
+Best save speedup: 3.69788x
 
-Total Speedup: 25.9949x
+Total Speedup: 26.2751x
 ----------------------------------------
 Results for small
 base(load, commands, save) | update(load, commands, save)
-1067us 125us 120us | 68us 11us 44us
-988us 119us 119us | 57us 9700ns 46us
-1009us 120us 120us | 59us 8600ns 45us
-1031us 120us 120us | 68us 11us 45us
-996us 118us 118us | 50us 7600ns 37us
-Average base: 1259us Average update: 114us
-Best base: 988us 119us 119us Best update: 50us 7600ns 37us
+1185us 130us 114us | 55us 9500ns 50us
+978us 118us 113us | 58us 9100ns 51us
+1031us 120us 114us | 59us 9700ns 48us
+1017us 135us 115us | 56us 9900ns 40us
+1002us 119us 118us | 70us 11us 44us
+Average base: 1283us Average update: 116us
+Best base: 978us 118us 113us Best update: 56us 9900ns 40us
 
-Best load speedup: 19.6481x
-Best commands speedup: 15.6974x
-Best save speedup: 3.21237x
+Best load speedup: 17.3422x
+Best commands speedup: 11.9697x
+Best save speedup: 2.7931x
 
-Total Speedup: 11.021x
-----------------------------------------
-Results for many-cities
-base(load, commands, save) | update(load, commands, save)
-964ms 928ms 110ms | 39ms 3748us 28ms
-965ms 927ms 109ms | 39ms 3689us 29ms
-958ms 927ms 109ms | 39ms 3898us 28ms
-950ms 923ms 108ms | 39ms 3634us 28ms
-960ms 928ms 109ms | 39ms 3621us 28ms
-Average base: 1997ms Average update: 72ms
-Best base: 950ms 923ms 108ms Best update: 39ms 3621us 28ms
-
-Best load speedup: 24.2694x
-Best commands speedup: 255.098x
-Best save speedup: 3.81009x
-
-Total Speedup: 27.7174x
+Total Speedup: 10.9754x
 ----------------------------------------
 Results for medium
 base(load, commands, save) | update(load, commands, save)
-11ms 883ms 1251us | 373us 2474us 309us
-9519us 878ms 1199us | 376us 2538us 316us
-9529us 876ms 1137us | 406us 2689us 319us
-9590us 874ms 1148us | 398us 2706us 312us
-9493us 869ms 1132us | 369us 2444us 320us
-Average base: 887ms Average update: 3271us
-Best base: 9493us 869ms 1132us Best update: 369us 2444us 320us
+9386us 881ms 1215us | 407us 2564us 328us
+9537us 878ms 1164us | 387us 2747us 353us
+9421us 876ms 1159us | 390us 2725us 317us
+9684us 868ms 1162us | 386us 2499us 307us
+9523us 874ms 1150us | 419us 2580us 317us
+Average base: 886ms Average update: 3346us
+Best base: 9684us 868ms 1162us Best update: 386us 2499us 307us
 
-Best load speedup: 25.6792x
-Best commands speedup: 355.907x
-Best save speedup: 3.53038x
+Best load speedup: 25.0759x
+Best commands speedup: 347.539x
+Best save speedup: 3.78262x
 
-Total Speedup: 271.288x
+Total Speedup: 264.939x
+----------------------------------------
+Results for many-cities
+base(load, commands, save) | update(load, commands, save)
+968ms 925ms 110ms | 38ms 3674us 28ms
+963ms 926ms 110ms | 39ms 3568us 29ms
+972ms 924ms 110ms | 40ms 3652us 28ms
+963ms 928ms 110ms | 39ms 3792us 28ms
+970ms 925ms 110ms | 39ms 3710us 28ms
+Average base: 2003ms Average update: 72ms
+Best base: 963ms 926ms 110ms Best update: 38ms 3674us 28ms
+
+Best load speedup: 24.7936x
+Best commands speedup: 252.083x
+Best save speedup: 3.81974x
+
+Total Speedup: 27.8175x
+----------------------------------------
+Results for large
+base(load, commands, save) | update(load, commands, save)
+48ms 8774ms 5636us | 2030us 21ms 1583us
+47ms 8770ms 5914us | 2020us 21ms 1603us
+47ms 8784ms 5768us | 2029us 21ms 1659us
+48ms 8771ms 5738us | 1982us 21ms 1603us
+48ms 8784ms 5715us | 2370us 21ms 1646us
+Average base: 8830ms Average update: 25ms
+Best base: 47ms 8770ms 5914us Best update: 1982us 21ms 1603us
+
+Best load speedup: 24.0979x
+Best commands speedup: 413.11x
+Best save speedup: 3.68732x
+
+Total Speedup: 350.574x
 ----------------------------------------
 Results for many-updates
 base(load, commands, save) | update(load, commands, save)
-1015us 9629ms 115us | 55us 111ms 49us
-977us 9631ms 117us | 54us 109ms 48us
-966us 9630ms 130us | 59us 111ms 55us
-981us 9631ms 117us | 54us 109ms 50us
-963us 9630ms 164us | 57us 111ms 46us
-Average base: 9631ms Average update: 110ms
-Best base: 1015us 9629ms 115us Best update: 54us 109ms 48us
+1026us 9661ms 120us | 67us 113ms 40us
+1055us 9644ms 116us | 66us 111ms 50us
+1022us 9644ms 122us | 54us 113ms 59us
+985us 9655ms 142us | 52us 115ms 41us
+984us 9649ms 124us | 54us 112ms 49us
+Average base: 9652ms Average update: 113ms
+Best base: 1022us 9644ms 122us Best update: 66us 111ms 50us
 
-Best load speedup: 18.6404x
-Best commands speedup: 88.1926x
-Best save speedup: 2.35787x
+Best load speedup: 15.4705x
+Best commands speedup: 86.2205x
+Best save speedup: 2.41815x
 
-Total Speedup: 87.179x
+Total Speedup: 85.1079x
 ----------------------------------------
