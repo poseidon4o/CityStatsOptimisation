@@ -1348,6 +1348,9 @@ int main(int argc, char *argv[]) {
         } else {
             std::cout << "Unknown command\n";
         }
+#ifdef TRACY_ENABLE
+        std::this_thread::sleep_for(10s);
+#endif
         return 0;
     }
 
