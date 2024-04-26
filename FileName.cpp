@@ -966,9 +966,7 @@ struct FastCityStats : CityStatsInterface {
     static FORCE_INLINE void FindLineEndings(const char *__restrict data, std::array<int, arrSize> &__restrict delimiters, int &__restrict delimiterCount, int indexOffset) {
         ZoneScoped;
         const Vec64c newLineMask('\n'), spaceMask(' ');
-        std::string_view dataS(data, data + 64);
         Vec64c dataVec;
-        const char *start = data;
         for (int c = 0; c < loopCount; c++) {
             dataVec.load(data);
             data += 64;
@@ -1082,7 +1080,7 @@ struct FastCityStats : CityStatsInterface {
         ZoneScoped;
         ZoneValue(endIndex - startIndex);
         const uint8_t maskValue = _Count - 1;
-        int64_t c = startIndex;
+        int c = startIndex;
 
         Vec32c dirData;
         const Vec32c changeValue(change);
@@ -1175,7 +1173,7 @@ struct FastCityStats : CityStatsInterface {
             ZoneScopedN("ComputeAverages");
             float totalTemp = 0;
             float totalHumidity = 0;
-            int64_t c = 0;
+            int c;
 
             Vec8f tempAcc = 0, humAcc = 0;
             Vec8f curTemp, curHum;
@@ -1204,7 +1202,7 @@ struct FastCityStats : CityStatsInterface {
             humidity.write(reinterpret_cast<const char *>(&avgHumidity), sizeof(float));
         }
 
-        int64_t dirCount[_Count] = {};
+        int dirCount[_Count] = {};
         {
             ZoneScopedN("Write dirs");
             for (int c = 0; c < int(dataDirs.size()); c++) {
