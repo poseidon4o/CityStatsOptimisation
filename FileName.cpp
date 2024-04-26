@@ -1141,7 +1141,7 @@ struct FastCityStats : CityStatsInterface {
         }
     }
 
-    FORCE_INLINE void ChangeDirs(int64_t startIndex, int64_t endIndex, int8_t change) {
+    FORCE_INLINE void ChangeDirs(int startIndex, int endIndex, int8_t change) {
         ZoneScoped;
         ZoneValue(endIndex - startIndex);
         const uint8_t maskValue = _Count - 1;
@@ -1171,15 +1171,18 @@ struct FastCityStats : CityStatsInterface {
         }
     }
 
-    FORCE_INLINE void UpdateTemperatureInRange(int64_t startID, int64_t endID, float delta) {
+    FORCE_INLINE void UpdateTemperatureInRange(int startIndex, int endIndex, float delta) {
         ZoneScoped;
-        ZoneValue(endID - startID);
-        auto startIndex = startID;
-        auto endIndex = endID;
-        int64_t c = startIndex;
+        ZoneValue(endIndex - startIndex);
+        int c = startIndex;
 #ifdef ENABLE_SIMD
 
         Vec8f deltaV = delta, data;
+
+        const int extraPrefixLen = startIndex % 8;
+        const int alignedStartIdx = startIndex - extraPrefixLen;
+        const uint32_t prefixMask = (1 << extraPrefixLen) - 1;
+
         const int untilAligned = std::min<int>(endIndex - startIndex, (32 - (intptr_t(dataTemp.data() + c) % 32)) / sizeof(float));
         for (int r = 0; r < untilAligned; r++) {
             dataTemp[r + c] += delta;
@@ -1199,13 +1202,13 @@ struct FastCityStats : CityStatsInterface {
         }
     }
 
-    FORCE_INLINE void UpdateHumidityInRange(int64_t startID, int64_t endID, float delta) {
+    FORCE_INLINE void UpdateHumidityInRange(int startID, int endID, float delta) {
         ZoneScoped;
         ZoneValue(endID - startID);
         auto startIndex = startID;
         auto endIndex = endID;
 
-        int64_t c = startIndex;
+        int c = startIndex;
 #ifdef ENABLE_SIMD
         Vec8f deltaV = delta, data;
         Vec8f maxHum = 100, minHum = 0;
