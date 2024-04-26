@@ -482,7 +482,6 @@ std::vector<TestDescription> tests = {
 #define NEVER_INLINE __attribute__((noinline))
 #endif
 
-#define ENABLE_SIMD
 //#define TRACY_ENABLE
 
 #ifdef TRACY_ENABLE
@@ -493,10 +492,10 @@ std::vector<TestDescription> tests = {
 #define ZoneValue(...)
 
 #endif
-#ifdef ENABLE_SIMD
+
 #include <immintrin.h>
 #include "vectorclass.h"
-#endif
+
 #include <array>
 #include <string_view>
 #include <thread>
@@ -867,18 +866,6 @@ struct FastCityStats : CityStatsInterface {
         const char *lineStart = data + start;
         const int idDigitCount = delimiters[0] - start - 1;
 
-        //std::string_view line(data + start, data + delimiters[4]);
-        //std::string_view idS(data + start, data + delimiters[0]);
-        //std::string_view city(data + delimiters[0], data + delimiters[1]);
-        //std::string_view dirName(data + delimiters[1], data + delimiters[2]);
-        //std::string_view tempS(data + delimiters[2], data + delimiters[3]);
-        //std::string_view humiS(data + delimiters[3], line.data() + line.length());
-        //const int iCount = idS.length() - 1;
-        //assert(iCount == idDigitCount);
-        //if (idDigitCount < 1 || idDigitCount > 8) {
-        //    assert(false);
-        //}
-
         int id;
         if (idDigitCount >= 4) {
             id = ParseIntSimd(lineStart, idDigitCount);
@@ -911,7 +898,6 @@ struct FastCityStats : CityStatsInterface {
         ZoneScoped;
         const char *lineData = inputData.data() + start;
         const char *data = inputData.data();
-        // std::string_view line(data + start, data + delimiters[4]);
 
         const char type = *lineData;
 
@@ -921,7 +907,7 @@ struct FastCityStats : CityStatsInterface {
         cmd.delta = ParseFloat<' '>(data + delimiters[2]);
         const char rot = *(data + delimiters[3]);
         cmd.isRightRotate = rot == 'r';
-        // TODO avoid if
+
         if (type == 't') {
             tCommands.push_back(cmd);
         } else {
@@ -959,24 +945,15 @@ struct FastCityStats : CityStatsInterface {
             const int startIndexIndex = std::lower_bound(index.begin(), index.end(), startID) - index.begin();
             const int endIndexIndex = std::upper_bound(index.begin(), index.end(), endID) - index.begin();
 
-            //assert(isInRange(index[std::clamp<int>(startIndexIndex - 1, 0, index.size() - 1)], index[std::clamp<int>(startIndexIndex + 1, 0, index.size() - 1)], startID)
-            //    || startID > index.back() || startID < index.front());
-            //assert(isInRange(index[std::clamp<int>(endIndexIndex - 1, 0, index.size() - 1)], index[std::clamp<int>(endIndexIndex + 1, 0, index.size() - 1)], endID)
-            //    || endID > index.back() || endID < index.front());
-
             auto start = std::lower_bound(
                 dataID.begin() + std::max<int>(0, (startIndexIndex - 2) * elementPerInterval),
                 dataID.begin() + std::min<int>(idCount, (startIndexIndex + 0) * elementPerInterval),
                 startID);
-            //auto _start = std::lower_bound(dataID.begin(), dataID.end(), startID);
-            //assert(start == _start);
 
             auto end = std::upper_bound(
                 dataID.begin() + std::max<int>(0, (endIndexIndex - 2) * elementPerInterval),
                 dataID.begin() + std::min<int>(idCount, (endIndexIndex + 0) * elementPerInterval),
                 endID);
-            //auto _end = std::upper_bound(dataID.begin(), dataID.end(), endID);
-            //assert(end == _end);
 
             auto startIndex = start - dataID.begin();
             auto endIndex = end - dataID.begin();
@@ -988,7 +965,6 @@ struct FastCityStats : CityStatsInterface {
     template <int loopCount = 8, int arrSize>
     static FORCE_INLINE void FindLineEndings(const char *__restrict data, std::array<int, arrSize> &__restrict delimiters, int &__restrict delimiterCount, int indexOffset) {
         ZoneScoped;
-#ifdef ENABLE_SIMD
         const Vec64c newLineMask('\n'), spaceMask(' ');
         std::string_view dataS(data, data + 64);
         Vec64c dataVec;
@@ -1006,16 +982,10 @@ struct FastCityStats : CityStatsInterface {
             for (int r = 0; r < delimiterBits; r++) {
                 const int pos = BSF(delimiterBitmask);
                 delimiters[delimiterCount++] = (c * 64) + (pos + 1) + indexOffset;
-                //if (delimiterCount > 1) {
-                //    std::string_view part = std::string_view(inputData.data()  + delimiters[delimiterCount - 2], inputData.data() + delimiters[delimiterCount - 1]);
-                //    assert(part.length() >= 1);
-                //    assert(part.length() <= 32);
-                //}
                 delimiterBitmask ^= (1llu << pos);
             }
         }
         ZoneValue(delimiterCount);
-#endif
     }
 
     template <int MaxLinePer64Byte = 4, int LoopCount = 16, typename ParseFN>
@@ -1039,59 +1009,26 @@ struct FastCityStats : CityStatsInterface {
 
         memset(inputData.aligned + readSize, 0, batchSize - leftover);
 
-        for (int q = 0; q < 100; q++) {
-#ifdef ENABLE_SIMD
-            int start = 0;
-            int delimiterCount = 0;
-            std::array<int, arrSize> delimiterIndices;
-            for (int b = 0; b < batchCount; b++) {
-                const int offset = b * batchSize;
-                FindLineEndings<loopCount, arrSize>(inputData.data() + offset, delimiterIndices, delimiterCount, offset);
-                const int lineCount = delimiterCount / delimitersPerLine;
+        int start = 0;
+        int delimiterCount = 0;
+        std::array<int, arrSize> delimiterIndices;
+        for (int b = 0; b < batchCount; b++) {
+            const int offset = b * batchSize;
+            FindLineEndings<loopCount, arrSize>(inputData.data() + offset, delimiterIndices, delimiterCount, offset);
+            const int lineCount = delimiterCount / delimitersPerLine;
 
-                for (int c = 0; c < lineCount; c++) {
-                    const int lineDelimiterOffset = c * delimitersPerLine;
-                    fn(start, delimiterIndices.data() + lineDelimiterOffset);
-                    start = delimiterIndices[lineDelimiterOffset + spacesPerLine];
-                }
-
-                const int remaining = delimiterCount % delimitersPerLine;
-                int f = 0;
-                for (int c = delimiterCount - remaining; c < delimiterCount; c++) {
-                    delimiterIndices[f++] = delimiterIndices[c];
-                }
-                delimiterCount = remaining;
+            for (int c = 0; c < lineCount; c++) {
+                const int lineDelimiterOffset = c * delimitersPerLine;
+                fn(start, delimiterIndices.data() + lineDelimiterOffset);
+                start = delimiterIndices[lineDelimiterOffset + spacesPerLine];
             }
-            return;
-            dataID.clear();
-            dataTemp.clear();
-            dataHumidity.clear();
-            dataDirs.clear();
-#endif
-            //assert(delimiterCount >= 1);
-            int index = start;
-            while (true) {
-                const int start = index;
-                delimiterCount = 0;
-                while (index < readSize && inputData[index] != '\n') {
-                    if (inputData[index] == ' ') {
-                        delimiterIndices[delimiterCount++] = index + 1;
-                    }
-                    ++index;
-                }
-                delimiterIndices[delimiterCount++] = index + 1;
 
-                if (index - start == 0) {
-                    break;
-                }
-                fn(start, delimiterIndices.data());
-                ++index;
+            const int remaining = delimiterCount % delimitersPerLine;
+            int f = 0;
+            for (int c = delimiterCount - remaining; c < delimiterCount; c++) {
+                delimiterIndices[f++] = delimiterIndices[c];
             }
-            return;
-            dataID.clear();
-            dataTemp.clear();
-            dataHumidity.clear();
-            dataDirs.clear();
+            delimiterCount = remaining;
         }
     }
 
@@ -1146,7 +1083,7 @@ struct FastCityStats : CityStatsInterface {
         ZoneValue(endIndex - startIndex);
         const uint8_t maskValue = _Count - 1;
         int64_t c = startIndex;
-#ifdef ENABLE_SIMD
+
         Vec32c dirData;
         const Vec32c changeValue(change);
 
@@ -1164,7 +1101,6 @@ struct FastCityStats : CityStatsInterface {
             dirData.store(dataDirs.data() + c);
             c += 32;
         }
-#endif
 
         for (; c < endIndex; c++) {
             dataDirs[c] = uint8_t(dataDirs[c] + change) & maskValue;
@@ -1175,7 +1111,6 @@ struct FastCityStats : CityStatsInterface {
         ZoneScoped;
         ZoneValue(endIndex - startIndex);
         int c = startIndex;
-#ifdef ENABLE_SIMD
 
         Vec8f deltaV = delta, data;
 
@@ -1195,7 +1130,6 @@ struct FastCityStats : CityStatsInterface {
             data.store_a(dataTemp.data() + c); // store_nt
             c += 8;
         }
-#endif
 
         for (; c < endIndex; c++) {
             dataTemp[c] += delta;
@@ -1209,7 +1143,7 @@ struct FastCityStats : CityStatsInterface {
         auto endIndex = endID;
 
         int c = startIndex;
-#ifdef ENABLE_SIMD
+
         Vec8f deltaV = delta, data;
         Vec8f maxHum = 100, minHum = 0;
         const int untilAligned = std::min<int>(endIndex - startIndex, (32 - (intptr_t(dataHumidity.data() + c) % 32)) / sizeof(float));
@@ -1227,7 +1161,7 @@ struct FastCityStats : CityStatsInterface {
             data.store_a(dataHumidity.data() + c); // store_nt
             c += 8;
         }
-#endif
+
         for (; c < endIndex; c++) {
             dataHumidity[c] = std::clamp(dataHumidity[c] + delta, 0.f, 100.f);
         }
@@ -1242,7 +1176,7 @@ struct FastCityStats : CityStatsInterface {
             float totalTemp = 0;
             float totalHumidity = 0;
             int64_t c = 0;
-#ifdef ENABLE_SIMD
+
             Vec8f tempAcc = 0, humAcc = 0;
             Vec8f curTemp, curHum;
 
@@ -1258,7 +1192,7 @@ struct FastCityStats : CityStatsInterface {
                 totalTemp += tempAcc[r];
                 totalHumidity += humAcc[r];
             }
-#endif
+
             for (; c < dataTemp.size(); c++) {
                 totalTemp += dataTemp[c];
                 totalHumidity += dataHumidity[c];
@@ -1295,15 +1229,6 @@ struct FastCityStats : CityStatsInterface {
 int main(int argc, char *argv[]) {
     StackAllocator empty(nullptr, 0);
     StackAllocator allocator(new uint8_t[1_gb], 1_gb);
-
-    if (0) {
-        allocator.freeAll();
-        FastCityStats update(&allocator);
-        std::vector<float> data;
-        std::string output;
-        Tester::TestImplementation(tests[4].name, &update, data, output, "update");
-        return 0;
-    }
 
     if (argc == 2) {
         if (strcmp(argv[1], "generate") == 0) {
