@@ -1107,9 +1107,9 @@ struct FastCityStats : CityStatsInterface {
         c += untilAligned;
 
         while (endIndex - c >= 32) {
-            dirData.load(dataDirs.data() + c);
+            dirData.load_a(dataDirs.data() + c);
             dirData = (dirData + changeValue) & mask;
-            dirData.store(dataDirs.data() + c);
+            dirData.store_a(dataDirs.data() + c);
             c += 32;
         }
 
