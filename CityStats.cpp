@@ -1229,10 +1229,8 @@ struct FastCityStats : CityStatsInterface {
                 humAcc += curHum;
             }
 
-            for (int r = 0; r < 8; r++) {
-                totalTemp += tempAcc[r];
-                totalHumidity += humAcc[r];
-            }
+            totalTemp += horizontal_add(tempAcc);
+            totalHumidity += horizontal_add(humAcc);
 
             for (; c < dataTemp.size(); c++) {
                 totalTemp += dataTemp[c];
