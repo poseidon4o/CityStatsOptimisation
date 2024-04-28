@@ -1076,6 +1076,19 @@ struct FastCityStats : CityStatsInterface {
         }
     }
 
+    static inline const Vec8ib POSTFIX_MASK[8] = {
+        Vec8ib(1, 1, 1, 1, 1, 1, 1, 1),
+        Vec8ib(0, 1, 1, 1, 1, 1, 1, 1),
+        Vec8ib(0, 0, 1, 1, 1, 1, 1, 1),
+        Vec8ib(0, 0, 0, 1, 1, 1, 1, 1),
+        Vec8ib(0, 0, 0, 0, 1, 1, 1, 1),
+        Vec8ib(0, 0, 0, 0, 0, 1, 1, 1),
+        Vec8ib(0, 0, 0, 0, 0, 0, 1, 1),
+        Vec8ib(0, 0, 0, 0, 0, 0, 0, 1),
+    };
+
+    static inline constexpr int NO_SIMD_CUTOFF = 8;
+
     FORCE_INLINE void ChangeDirs(int startIndex, int endIndex, int8_t change) {
         ZoneScoped;
         ZoneValue(endIndex - startIndex);
@@ -1107,20 +1120,31 @@ struct FastCityStats : CityStatsInterface {
 
     FORCE_INLINE void UpdateTemperatureInRange(int startIndex, int endIndex, float delta) {
         ZoneScoped;
-        ZoneValue(endIndex - startIndex);
-        int c = startIndex;
 
-        Vec8f deltaV = delta, data;
+        const int updateCount = endIndex - startIndex;
+        ZoneValue(updateCount);
 
-        const int extraPrefixLen = startIndex % 8;
-        const int alignedStartIdx = startIndex - extraPrefixLen;
-        const uint32_t prefixMask = (1 << extraPrefixLen) - 1;
-
-        const int untilAligned = std::min<int>(endIndex - startIndex, (32 - (intptr_t(dataTemp.data() + c) % 32)) / sizeof(float));
-        for (int r = 0; r < untilAligned; r++) {
-            dataTemp[r + c] += delta;
+        if (updateCount < NO_SIMD_CUTOFF) {
+            for (int c = startIndex; c < endIndex; c++) {
+                dataTemp[c] += delta;
+            }
+            return;
         }
-        c += untilAligned;
+
+        const Vec8f deltaV = delta;
+        Vec8f data;
+        int c;
+
+        const int prefixMaskSize = startIndex % 8;
+        const int alignedStartIdx = startIndex - prefixMaskSize;
+
+        const Vec8ib startMask = POSTFIX_MASK[prefixMaskSize];
+        data.load_a(dataTemp.data() + alignedStartIdx);
+        const auto prefixMaskedDelta = _mm256_blendv_ps(Vec8f(0.f), deltaV, _mm256_castsi256_ps(startMask));
+        data += prefixMaskedDelta;
+        data.store_a(dataTemp.data() + alignedStartIdx);
+
+        c = alignedStartIdx + 8;
 
         while (endIndex - c >= 8) {
             data.load_a(dataTemp.data() + c);
@@ -1129,40 +1153,59 @@ struct FastCityStats : CityStatsInterface {
             c += 8;
         }
 
-        for (; c < endIndex; c++) {
-            dataTemp[c] += delta;
-        }
+        const int postfixMaskSize = endIndex % 8;
+        const Vec8ib endMask = ~POSTFIX_MASK[postfixMaskSize];
+        const auto postfixMaskedData = _mm256_blendv_ps(Vec8f(0.f), deltaV, _mm256_castsi256_ps(endMask));
+        data.load_a(dataTemp.data() + c);
+        data += postfixMaskedData;
+        data.store_a(dataTemp.data() + c);
     }
 
-    FORCE_INLINE void UpdateHumidityInRange(int startID, int endID, float delta) {
+    FORCE_INLINE void UpdateHumidityInRange(int startIndex, int endIndex, float delta) {
         ZoneScoped;
-        ZoneValue(endID - startID);
-        auto startIndex = startID;
-        auto endIndex = endID;
 
-        int c = startIndex;
+        const int updateCount = endIndex - startIndex;
+        ZoneValue(updateCount);
 
-        Vec8f deltaV = delta, data;
-        Vec8f maxHum = 100, minHum = 0;
-        const int untilAligned = std::min<int>(endIndex - startIndex, (32 - (intptr_t(dataHumidity.data() + c) % 32)) / sizeof(float));
-        for (int r = 0; r < untilAligned; r++) {
-            dataHumidity[r + c] = std::clamp(dataHumidity[r + c] + delta, 0.f, 100.f);;
+        if (updateCount < NO_SIMD_CUTOFF) {
+            for (int c = startIndex; c < endIndex; c++) {
+                dataHumidity[c] = std::clamp(dataHumidity[c] + delta, 0.f, 100.f);
+            }
+            return;
         }
-        c += untilAligned;
+
+        const Vec8f deltaV = delta;
+        const Vec8f maxHum = 100, minHum = 0;
+        Vec8f data;
+        int c;
+
+        const int prefixMaskSize = startIndex % 8;
+        const int alignedStartIdx = startIndex - prefixMaskSize;
+
+        const Vec8ib startMask = POSTFIX_MASK[prefixMaskSize];
+        data.load_a(dataHumidity.data() + alignedStartIdx);
+        const auto prefixMaskedDelta = _mm256_blendv_ps(Vec8f(0.f), deltaV, _mm256_castsi256_ps(startMask));
+        data += prefixMaskedDelta;
+        data = max(min(data, maxHum), minHum);
+        data.store_a(dataHumidity.data() + alignedStartIdx);
+
+        c = alignedStartIdx + 8;
 
         while (endIndex - c >= 8) {
             data.load_a(dataHumidity.data() + c);
-
             data += deltaV;
             data = max(min(data, maxHum), minHum);
-
             data.store_a(dataHumidity.data() + c); // store_nt
             c += 8;
         }
 
-        for (; c < endIndex; c++) {
-            dataHumidity[c] = std::clamp(dataHumidity[c] + delta, 0.f, 100.f);
-        }
+        const int postfixMaskSize = endIndex % 8;
+        const Vec8ib endMask = ~POSTFIX_MASK[postfixMaskSize];
+        const auto postfixMaskedData = _mm256_blendv_ps(Vec8f(0.f), deltaV, _mm256_castsi256_ps(endMask));
+        data.load_a(dataHumidity.data() + c);
+        data += postfixMaskedData;
+        data = max(min(data, maxHum), minHum);
+        data.store_a(dataHumidity.data() + c);
     }
 
     virtual void SaveData(std::ostream &temperature, std::ostream &humidity, std::ostream &directions) override {
