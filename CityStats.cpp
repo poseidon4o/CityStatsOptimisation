@@ -490,6 +490,7 @@ std::vector<TestDescription> tests = {
 #define ZoneScoped
 #define ZoneScopedN(...)
 #define ZoneValue(...)
+#define ZoneTransientN(...)
 
 #endif
 
@@ -1089,11 +1090,37 @@ struct FastCityStats : CityStatsInterface {
 
     static inline constexpr int NO_SIMD_CUTOFF = 8;
 
-    FORCE_INLINE void ChangeDirs(int startIndex, int endIndex, int8_t change) {
-        ZoneScoped;
-        ZoneValue(endIndex - startIndex);
+    FORCE_INLINE void ChangeDirsScalar(int startIndex, int endIndex, uint8_t change) {
         const uint8_t maskValue = _Count - 1;
+
+        const uint64_t wideMask = 0x0101010101010101ull * uint64_t(maskValue);
+        const uint64_t wideChange = 0x0101010101010101ull * uint64_t(change);
+
+        const int updateCount = endIndex - startIndex;
+        uint64_t *start = reinterpret_cast<uint64_t *>(dataDirs.data() + startIndex);
+
+        for (int r = 0; r < updateCount / 8; r++) {
+            *start = (*start + wideChange) & wideMask;
+            start++;
+        }
+
+        const uint64_t suffixLen = updateCount % 8;
+        const uint64_t trailingChange = (wideChange >> (63ull - (8ull * suffixLen))) >> 1;
+        *start = (*start + trailingChange) & wideMask;
+    }
+
+    FORCE_INLINE void ChangeDirs(int startIndex, int endIndex, int8_t signedChange) {
+        ZoneScoped;
+        const int updateCount = endIndex - startIndex;
+        ZoneValue(updateCount);
+        const uint8_t maskValue = _Count - 1;
+        const uint8_t change = uint8_t(signedChange + int8_t(8)) & maskValue;
+
         int c = startIndex;
+        if (dataDirs.size() < 1'000'000) {
+            ChangeDirsScalar(startIndex, endIndex, change);
+            return;
+        }
 
         Vec32c dirData;
         const Vec32c changeValue(change);
@@ -1101,9 +1128,7 @@ struct FastCityStats : CityStatsInterface {
         const Vec32c mask(maskValue);
         const int untilAligned = std::min<int>(endIndex - startIndex, (32 - (intptr_t(dataDirs.data() + c) % 32)) / sizeof(uint8_t));
 
-        for (int r = 0; r < untilAligned; r++) {
-            dataDirs[r + c] = uint8_t(dataDirs[r + c] + change) & maskValue;
-        }
+        ChangeDirsScalar(startIndex, startIndex + untilAligned, change);
         c += untilAligned;
 
         while (endIndex - c >= 32) {
@@ -1113,9 +1138,7 @@ struct FastCityStats : CityStatsInterface {
             c += 32;
         }
 
-        for (; c < endIndex; c++) {
-            dataDirs[c] = uint8_t(dataDirs[c] + change) & maskValue;
-        }
+        ChangeDirsScalar(c, endIndex, change);
     }
 
     FORCE_INLINE void UpdateTemperatureInRange(int startIndex, int endIndex, float delta) {
@@ -1329,6 +1352,7 @@ int main(int argc, char *argv[]) {
         const int repeatCount = desc.repeat;
         std::vector<Tester::TestResult::Times> baseResults, updateResults;
         for (int c = 0; c < repeatCount; c++) {
+            ZoneTransientN(f, desc.name.c_str(), true);
             allocator.zeroAll();
             allocator.freeAll();
             CityStats base(&empty);
