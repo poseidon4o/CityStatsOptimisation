@@ -1091,6 +1091,7 @@ struct FastCityStats : CityStatsInterface {
     static inline constexpr int NO_SIMD_CUTOFF = 8;
 
     FORCE_INLINE void ChangeDirsScalar(int startIndex, int endIndex, uint8_t change) {
+        ZoneScoped;
         const uint8_t maskValue = _Count - 1;
 
         const uint64_t wideMask = 0x0101010101010101ull * uint64_t(maskValue);
