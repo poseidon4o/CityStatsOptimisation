@@ -1270,10 +1270,45 @@ struct FastCityStats : CityStatsInterface {
         int dirCount[_Count] = {};
         {
             ZoneScopedN("Write dirs");
-            for (int c = 0; c < int(dataDirs.size()); c++) {
-                dirCount[dataDirs[c]]++;
-                std::string_view dir = dirNames[dataDirs[c]];
-                directions.write(dir.data(), dir.size());
+            alignas(32) char _dirNameData[8][16] = {
+                "north ",
+                "north-east ",
+                "east ",
+                "south-east ",
+                "south ",
+                "south-west ",
+                "west ",
+                "north-west ",
+            };
+
+            Vec16c dirValues[8];
+            for (int c = 0; c < 8; c++) {
+                dirValues[c].load(_dirNameData[c]);
+            }
+
+            const int batchSize = 2;
+            const int maxDirLen = 11;
+            char buff[maxDirLen * batchSize];
+            int c = 0;
+            int index = 0;
+            const int dirDataSize = dataDirs.size();
+            for (; c < dirDataSize / batchSize; c += batchSize) {
+                for (int r = 0; r < batchSize; r++) {
+                    const uint8_t dirValue = dataDirs[c + r];
+                    dirCount[dirValue]++;
+                    dirValues[dirValue].store(buff + index);
+                    index += dirNameLengths[dirValue];
+                }
+
+                directions.write(buff, index);
+                index = 0;
+            }
+
+            for (; c < dirDataSize; c++) {
+                const uint8_t dirValue = dataDirs[c];
+                std::string_view dir = dirNames[dirValue];
+                dirCount[dirValue]++;
+                directions.write(dir.data(), dirNameLengths[dirValue]);
             }
         }
 
