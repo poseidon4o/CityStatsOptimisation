@@ -678,6 +678,7 @@ struct FastCityStats : CityStatsInterface {
     inline static AlignedArrayPtr<uint8_t> dataDirs;
     inline static AlignedArrayPtr<char> inputData;
     inline static CommandList hCommands, tCommands;
+    inline static AlignedArrayPtr<char> dirOutputBuilder;
 
     char dirNamesBuff[68] = { "north north-east east south-east south south-west west north-west " };
     std::string_view dirNames[8] = {
@@ -712,7 +713,9 @@ struct FastCityStats : CityStatsInterface {
         inputData.reserve(READ_BUFFER_SIZE + 10);
         hCommands.reserve();
         tCommands.reserve();
+        dirOutputBuilder.reserve(RESERVE_SIZE * 11);
 
+        dirOutputBuilder.clear();
         hCommands.clear();
         tCommands.clear();
 
@@ -1285,41 +1288,28 @@ struct FastCityStats : CityStatsInterface {
             for (int c = 0; c < 8; c++) {
                 dirValues[c].load(_dirNameData[c]);
             }
-
-            const int batchSize = 2;
-            const int maxDirLen = 11;
-            char buff[maxDirLen * batchSize];
             int c = 0;
             int index = 0;
             const int dirDataSize = dataDirs.size();
-            for (; c < dirDataSize / batchSize; c += batchSize) {
-                for (int r = 0; r < batchSize; r++) {
-                    const uint8_t dirValue = dataDirs[c + r];
-                    dirCount[dirValue]++;
-                    dirValues[dirValue].store(buff + index);
-                    index += dirNameLengths[dirValue];
-                }
-
-                directions.write(buff, index);
-                index = 0;
-            }
 
             for (; c < dirDataSize; c++) {
                 const uint8_t dirValue = dataDirs[c];
-                std::string_view dir = dirNames[dirValue];
                 dirCount[dirValue]++;
-                directions.write(dir.data(), dirNameLengths[dirValue]);
+                dirValues[dirValue].store(dirOutputBuilder.data() + index);
+                index += dirNameLengths[dirValue];
             }
-        }
 
-
-        int mostCommonDir = 0;
-        for (int c = 1; c < _Count; c++) {
-            if (dirCount[c] > dirCount[mostCommonDir]) {
-                mostCommonDir = c;
+            int mostCommonDir = 0;
+            for (int c = 1; c < _Count; c++) {
+                if (dirCount[c] > dirCount[mostCommonDir]) {
+                    mostCommonDir = c;
+                }
             }
+
+            dirValues[mostCommonDir].store(dirOutputBuilder.data() + index);
+            index += dirNameLengths[mostCommonDir];
+            directions.write(dirOutputBuilder.data(), index);
         }
-        directions.write(dirNames[mostCommonDir].data(), dirNames[mostCommonDir].size());
     }
 };
 //////////////////////// END IMPLEMENTATION ////////////////////////
